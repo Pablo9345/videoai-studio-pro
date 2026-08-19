@@ -24,6 +24,19 @@ def init_session_state():
         st.session_state.guion = None
     if 'wizard_step' not in st.session_state:
         st.session_state.wizard_step = 1
+    # Nuevas variables para personalizaciones avanzadas
+    if 'archivos_guardados' not in st.session_state:
+        st.session_state.archivos_guardados = None
+    if 'formatos_seleccionados' not in st.session_state:
+        st.session_state.formatos_seleccionados = ['youtube']
+    if 'transicion_personalizada' not in st.session_state:
+        st.session_state.transicion_personalizada = None
+    if 'duracion_transicion_personalizada' not in st.session_state:
+        st.session_state.duracion_transicion_personalizada = None
+    if 'efectos_seleccionados' not in st.session_state:
+        st.session_state.efectos_seleccionados = []
+    if 'preview_plantilla_id' not in st.session_state:
+        st.session_state.preview_plantilla_id = None
 
 
 def is_logged_in() -> bool:

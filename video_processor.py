@@ -17,19 +17,54 @@ from datetime import datetime
 from database import OUTPUTS, TEMP_DIR, UPLOADS
 
 
-def _run_ffmpeg(cmd: List[str], timeout: int = 600) -> Tuple[bool, str]:
-    """Ejecuta FFmpeg con manejo de errores."""
+def _run_ffmpeg(cmd: List[str], timeout: int = 600, output_file: str = None) -> Tuple[bool, str]:
+    """
+    Ejecuta FFmpeg con manejo de errores y verificación de salida.
+    Usa stdout/stderr a archivo temporal para evitar cuelgues de buffer.
+    """
+    # Crear archivo temporal para capturar stderr sin bloquear
+    import tempfile
+    stderr_file = tempfile.NamedTemporaryFile(mode='w+b', suffix='.log', delete=False)
+    stderr_path = stderr_file.name
+    stderr_file.close()
+
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
+        with open(stderr_path, 'wb') as stderr_f:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_f,
+                timeout=timeout
+            )
+
+        # Leer stderr del archivo
+        err_msg = ""
+        try:
+            with open(stderr_path, 'rb') as f:
+                err_msg = f.read().decode('utf-8', errors='replace')[-500:]
+        except Exception:
+            pass
+
         if result.returncode != 0:
-            return False, result.stderr[-500:] if result.stderr else "Error desconocido"
+            return False, err_msg if err_msg else "Error desconocido"
+
+        # Verificar que el archivo de salida exista y no esté vacío
+        if output_file:
+            if not os.path.exists(output_file):
+                return False, "Archivo de salida no creado"
+            if os.path.getsize(output_file) == 0:
+                return False, "Archivo de salida vacío"
+
         return True, "OK"
     except subprocess.TimeoutExpired:
         return False, "Timeout procesando video"
     except Exception as e:
         return False, str(e)
+    finally:
+        try:
+            os.unlink(stderr_path)
+        except OSError:
+            pass
 
 
 def _get_video_duration(ruta_video: str) -> float:
@@ -224,57 +259,99 @@ def crear_diapositiva_imagen(ruta_imagen: str, duracion: int = 3,
                              ken_burns: bool = True) -> str:
     """
     Crea una diapositiva de imagen con efecto Ken Burns (zoom suave).
+    Manejo robusto de FFmpeg con múltiples fallbacks.
     """
     slide_path = OUTPUTS / f"slide_{uuid.uuid4().hex}.mp4"
+    slide_path_str = str(slide_path)
 
-    # Siempre usar el approach simple con pad+scale para máxima compatibilidad
-    # El zoompan puede tener problemas con imágenes pequeñas o relaciones inusuales
-    vf = (
-        f"scale={resolucion}:force_original_aspect_ratio=decrease,"
-        f"pad={resolucion}:(ow-iw)/2:(oh-ih)/2:color=black"
+    # Limpiar archivo si ya existe
+    if os.path.exists(slide_path_str):
+        try:
+            os.remove(slide_path_str)
+        except OSError:
+            pass
+
+    # Filtro base: escalar y centrar
+    # IMPORTANTE: FFmpeg scale usa ':' como separador (320:240), no 'x' (320x240)
+    # Convertir resolucion de "640x480" a "640:480"
+    resolucion_ffmpeg = resolucion.replace("x", ":")
+    vf_base = (
+        f"scale={resolucion_ffmpeg}:force_original_aspect_ratio=decrease,"
+        f"pad={resolucion_ffmpeg}:(ow-iw)/2:(oh-ih)/2:color=black"
     )
 
-    # Aplicar efecto zoom solo si está habilitado y la imagen lo permite
+    # Estrategia 1: Con Ken Burns (zoom) + audio
     if ken_burns:
         try:
             w, h = resolucion.split("x")
-            # zoompan requiere dimensiones específicas
             vf_zoompan = (
                 f"scale={int(w)*2}:{int(h)*2}:force_original_aspect_ratio=increase,"
                 f"crop={int(w)*2}:{int(h)*2},"
                 f"zoompan=z='min(zoom+0.0008,1.1)':d={duracion*30}:s={resolucion}:fps=30"
             )
             cmd = [
-                "ffmpeg", "-y", "-loop", "1", "-i", ruta_imagen,
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", ruta_imagen,
+                "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
                 "-t", str(duracion),
                 "-vf", vf_zoompan,
-                "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-pix_fmt", "yuv420p",
-                "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                "-c:a", "aac", "-b:a", "192k",
+                "-c:a", "aac", "-b:a", "128k",
                 "-shortest",
-                str(slide_path)
+                slide_path_str
             ]
-            success, _ = _run_ffmpeg(cmd)
-            if success:
-                return str(slide_path)
+            success, _ = _run_ffmpeg(cmd, output_file=slide_path_str)
+            if success and os.path.getsize(slide_path_str) > 0:
+                return slide_path_str
         except Exception:
             pass
 
-    # Fallback: diapositiva simple sin zoom
+        # Limpiar archivo potencialmente vacío
+        if os.path.exists(slide_path_str) and os.path.getsize(slide_path_str) == 0:
+            try:
+                os.remove(slide_path_str)
+            except OSError:
+                pass
+
+    # Estrategia 2: Simple + audio
+    # Importante: añadir format=yuv420p al vf para asegurar conversión de pixel format
     cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", ruta_imagen,
-        "-t", str(duracion),
-        "-vf", vf,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-        "-pix_fmt", "yuv420p",
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", ruta_imagen,
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-        "-c:a", "aac", "-b:a", "192k",
+        "-t", str(duracion),
+        "-vf", vf_base + ",fps=30,format=yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k",
         "-shortest",
-        str(slide_path)
+        slide_path_str
     ]
-    _run_ffmpeg(cmd)
-    return str(slide_path)
+    success, _ = _run_ffmpeg(cmd, output_file=slide_path_str)
+    if success and os.path.getsize(slide_path_str) > 0:
+        return slide_path_str
+
+    # Limpiar
+    if os.path.exists(slide_path_str):
+        try:
+            os.remove(slide_path_str)
+        except OSError:
+            pass
+
+    # Estrategia 3: Solo video, sin audio, con format conversion
+    cmd_noaudio = [
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", ruta_imagen,
+        "-t", str(duracion),
+        "-vf", vf_base + ",fps=30,format=yuv420p",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "25",
+        "-pix_fmt", "yuv420p",
+        slide_path_str
+    ]
+    _run_ffmpeg(cmd_noaudio, output_file=slide_path_str)
+
+    return slide_path_str
 
 
 def aplicar_color_grading(ruta_video: str, preset: str = "neutro") -> str:
@@ -301,6 +378,94 @@ def aplicar_color_grading(ruta_video: str, preset: str = "neutro") -> str:
     ]
     success, _ = _run_ffmpeg(cmd)
     return str(output_path) if success else ruta_video
+
+
+def aplicar_efectos_visuales(ruta_video: str, efecto_id: str = "ninguno",
+                              intensidad: float = 0.5) -> str:
+    """
+    Aplica un efecto visual al video según el efecto_id.
+    Usa la lista EFECTOS_DISPONIBLES de templates_data.
+    Si efecto_id == "ninguno" o no se encuentra, retorna el video original.
+    """
+    if efecto_id == "ninguno" or not efecto_id:
+        return ruta_video
+
+    # Buscar efecto en el catálogo
+    from templates_data import get_efecto_by_id
+    efecto = get_efecto_by_id(efecto_id)
+    if not efecto or not efecto.get("filtro_ffmpeg"):
+        return ruta_video
+
+    filtro_base = efecto["filtro_ffmpeg"]
+
+    # Ajustar intensidad del efecto (0.0 a 1.0)
+    # Algunos efectos pueden escalarse con la intensidad
+    intensidad_clamp = max(0.1, min(1.0, intensidad))
+
+    # Para efectos con noise, ajustar la intensidad del noise
+    if "noise=" in filtro_base:
+        # Escalar el valor de noise según intensidad
+        import re
+        filtro_base = re.sub(
+            r'noise=alls=(\d+)',
+            lambda m: f'noise=alls={int(int(m.group(1)) * intensidad_clamp)}',
+            filtro_base
+        )
+
+    # Para efectos con vignette, ajustar el ángulo
+    if "vignette=PI/" in filtro_base:
+        import re
+        filtro_base = re.sub(
+            r'vignette=PI/(\d+)',
+            lambda m: f'vignette=PI/{int(m.group(1)) / intensidad_clamp:.1f}',
+            filtro_base
+        )
+
+    output_path = TEMP_DIR / f"effect_{efecto_id}_{uuid.uuid4().hex}.mp4"
+    cmd = [
+        "ffmpeg", "-y", "-i", ruta_video,
+        "-vf", filtro_base,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-c:a", "copy",
+        str(output_path)
+    ]
+    success, err = _run_ffmpeg(cmd, output_file=str(output_path))
+    return str(output_path) if success and os.path.exists(str(output_path)) else ruta_video
+
+
+def aplicar_efectos_multiples(ruta_video: str, efectos: List[Dict[str, Any]]) -> str:
+    """
+    Aplica múltiples efectos en secuencia al video.
+    efectos: lista de dicts [{"id": "vignette", "intensidad": 0.5}, ...]
+    """
+    resultado = ruta_video
+    for efecto in efectos:
+        efecto_id = efecto.get("id", "ninguno")
+        intensidad = efecto.get("intensidad", 0.5)
+        resultado = aplicar_efectos_visuales(resultado, efecto_id, intensidad)
+    return resultado
+
+
+def combinar_filtros_efectos(efectos: List[str], intensidad: float = 0.5) -> str:
+    """
+    Combina múltiples efectos en un solo filtro FFmpeg para aplicar de una vez.
+    Más eficiente que aplicar efectos uno por uno.
+    efectos: lista de IDs de efectos ["vignette", "film_grain"]
+    Retorna string de filtro FFmpeg listo para usar con -vf
+    """
+    from templates_data import get_efecto_by_id
+
+    filtros = []
+    for efecto_id in efectos:
+        if efecto_id == "ninguno":
+            continue
+        efecto = get_efecto_by_id(efecto_id)
+        if efecto and efecto.get("filtro_ffmpeg"):
+            filtros.append(efecto["filtro_ffmpeg"])
+
+    if not filtros:
+        return ""
+    return ",".join(filtros)
 
 
 def aplicar_audio_ducking(video_path: str, musica_path: str,

@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 # Imports del proyecto
-from styles import PREMIUM_CSS
+from styles import PREMIUM_CSS, html_safe
 from database import (
     cargar_db, guardar_db, get_config, update_config,
     obtener_usuario, usar_token, verificar_tokens, agregar_proyecto,
@@ -35,14 +35,16 @@ from auth import (
     init_session_state, is_logged_in, is_admin, logout,
     render_login_form, render_user_sidebar
 )
-from groq_ai import GroqAI
+from groq_ai import GroqAI, MODELOS_RECOMENDADOS
 from video_processor import procesar_video_completo
 from components import (
     render_template_gallery, render_processing_animation,
     render_stat_grid, render_guion_visualization,
     render_pricing_section, render_wizard_nav,
     render_format_selector, render_upload_zone,
-    render_project_card
+    render_project_card,
+    render_transiciones_selector, render_efectos_selector,
+    render_preview_modal
 )
 from templates_data import (
     PLANTILLAS_PROFESIONALES, get_plantilla_by_id, get_plantilla_default,
@@ -299,10 +301,51 @@ def render_process_page():
 
     # ============ PASO 4: FORMATOS ============
     elif st.session_state.wizard_step == 4:
-        st.markdown("### 📱 Paso 4: Formatos de publicación")
-        st.markdown("Selecciona para qué plataformas quieres exportar tu video.")
+        st.markdown("### 📱 Paso 4: Formatos y personalización")
+        st.markdown("Selecciona para qué plataformas exportar y personaliza el estilo del video.")
 
-        formatos_seleccionados = render_format_selector()
+        # Sub-pestañas: Formatos / Transiciones / Efectos
+        tab_fmt, tab_trans, tab_efc = st.tabs(["📱 Formatos", "🎞 Transiciones", "✨ Efectos"])
+
+        with tab_fmt:
+            formatos_seleccionados = render_format_selector()
+
+        with tab_trans:
+            st.markdown("Personaliza las transiciones entre clips (opcional).")
+            usar_transicion_personalizada = st.checkbox(
+                "Usar transición personalizada (en lugar de la de la plantilla)",
+                value=False,
+                key="usar_trans_custom"
+            )
+            if usar_transicion_personalizada:
+                transicion_sel = render_transiciones_selector(
+                    st.session_state.plantilla_elegida.get("transicion", "fade")
+                    if st.session_state.plantilla_elegida else "fade"
+                )
+                st.session_state.transicion_personalizada = transicion_sel["id"]
+                st.session_state.duracion_transicion_personalizada = transicion_sel["duracion"]
+            else:
+                st.session_state.transicion_personalizada = None
+                st.session_state.duracion_transicion_personalizada = None
+                plantilla_trans = st.session_state.plantilla_elegida.get("transicion", "fade") if st.session_state.plantilla_elegida else "fade"
+                st.info(f"Se usará la transición de la plantilla: **{plantilla_trans}**")
+
+        with tab_efc:
+            st.markdown("Aplica efectos visuales adicionales a tu video (opcional).")
+            usar_efectos = st.checkbox(
+                "Aplicar efectos visuales adicionales",
+                value=False,
+                key="usar_efectos_visuales"
+            )
+            if usar_efectos:
+                efectos_sel = render_efectos_selector()
+                st.session_state.efectos_seleccionados = efectos_sel
+                if efectos_sel:
+                    st.success(f"✅ {len(efectos_sel)} efectos seleccionados")
+                else:
+                    st.warning("No has seleccionado ningún efecto")
+            else:
+                st.session_state.efectos_seleccionados = []
 
         col1, col2 = st.columns(2)
         with col1:
@@ -311,7 +354,7 @@ def render_process_page():
                 st.rerun()
         with col2:
             if not formatos_seleccionados:
-                st.warning("Selecciona al menos un formato")
+                st.warning("Selecciona al menos un formato en la pestaña 'Formatos'")
             elif st.button("⏭ Siguiente", type="primary", use_container_width=True):
                 st.session_state.formatos_seleccionados = formatos_seleccionados
                 st.session_state.wizard_step = 5
@@ -332,7 +375,7 @@ def render_process_page():
                       model=config.get("groq_model", "llama-3.1-70b-versatile"))
 
         if not groq.esta_configurado():
-            st.markdown("""
+                        st.markdown("""
             <div class="custom-alert custom-alert-warning">
                 <strong>⚠ API Key de Groq no configurada</strong>
                 <div style="margin-top: 0.3rem;">
@@ -398,15 +441,66 @@ def render_process_page():
     elif st.session_state.wizard_step == 6:
         st.markdown("### 🚀 Paso 6: Producir video")
 
+        # Validar que existan los datos requeridos
+        if not st.session_state.get('plantilla_elegida'):
+            st.error("❌ No se ha seleccionado una plantilla. Vuelve al paso 3.")
+            if st.button("⬅ Volver al paso 3"):
+                st.session_state.wizard_step = 3
+                st.rerun()
+            return
+
+        if not st.session_state.get('guion'):
+            st.error("❌ No se ha generado el guion. Vuelve al paso 5.")
+            if st.button("⬅ Volver al paso 5"):
+                st.session_state.wizard_step = 5
+                st.rerun()
+            return
+
+        if not st.session_state.get('formatos_seleccionados'):
+            st.warning("⚠ No se seleccionaron formatos. Usando YouTube por defecto.")
+            st.session_state.formatos_seleccionados = ['youtube']
+
+        if not st.session_state.get('archivos_guardados'):
+            st.error("❌ No se encontraron archivos. Vuelve al paso 1.")
+            if st.button("⬅ Volver al paso 1"):
+                st.session_state.wizard_step = 1
+                st.rerun()
+            return
+
         # Resumen
+        plantilla_nombre = st.session_state.plantilla_elegida.get('nombre', 'N/A')
+        tipo_cont = st.session_state.get('tipo_contenido_sel', 'N/A')
+        duracion = st.session_state.get('duracion_slider', 3)
+        formatos_str = ', '.join(st.session_state.formatos_seleccionados).upper()
+
+        # Personalizaciones avanzadas
+        transicion_personalizada = st.session_state.get('transicion_personalizada')
+        duracion_trans = st.session_state.get('duracion_transicion_personalizada')
+        efectos_seleccionados = st.session_state.get('efectos_seleccionados', [])
+
+        # Construir string de transición para el resumen
+        if transicion_personalizada:
+            trans_str = f"{transicion_personalizada} ({duracion_trans:.1f}s) — Personalizada"
+        else:
+            plantilla_trans = st.session_state.plantilla_elegida.get('transicion', 'fade')
+            trans_str = f"{plantilla_trans} — De la plantilla"
+
+        # String de efectos
+        if efectos_seleccionados:
+            efectos_str = ', '.join([f"{e['nombre']} ({int(e['intensidad']*100)}%)" for e in efectos_seleccionados])
+        else:
+            efectos_str = 'Ninguno'
+
         st.markdown(f"""
         <div class="glass-card">
             <h4 style="color: var(--text-primary) !important;">📋 Resumen del proyecto</h4>
             <ul style="color: var(--text-secondary) !important;">
-                <li><strong>Tipo:</strong> {st.session_state.get('tipo_contenido_sel', 'N/A')}</li>
-                <li><strong>Duración objetivo:</strong> {st.session_state.get('duracion_slider', 3)} minutos</li>
-                <li><strong>Plantilla:</strong> {st.session_state.plantilla_elegida['nombre']}</li>
-                <li><strong>Formatos:</strong> {', '.join(st.session_state.formatos_seleccionados).upper()}</li>
+                <li><strong>Tipo:</strong> {tipo_cont}</li>
+                <li><strong>Duración objetivo:</strong> {duracion} minutos</li>
+                <li><strong>Plantilla:</strong> {plantilla_nombre}</li>
+                <li><strong>Formatos:</strong> {formatos_str}</li>
+                <li><strong>Transición:</strong> {trans_str}</li>
+                <li><strong>Efectos visuales:</strong> {efectos_str}</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -454,6 +548,18 @@ def _ejecutar_produccion_video():
         "audio": archivos_guardados.get("audio"),
     }
 
+    # Aplicar personalizaciones de transición si el usuario las seleccionó
+    transicion_personalizada = st.session_state.get('transicion_personalizada')
+    duracion_transicion_personalizada = st.session_state.get('duracion_transicion_personalizada')
+
+    # Crear una copia de la plantilla para no mutar la original
+    plantilla_procesar = dict(st.session_state.plantilla_elegida)
+
+    if transicion_personalizada:
+        plantilla_procesar["transicion"] = transicion_personalizada
+        if duracion_transicion_personalizada:
+            plantilla_procesar["duracion_transicion"] = duracion_transicion_personalizada
+
     # Ejecutar pipeline
     def progress_callback(p, msg):
         progress.progress(p)
@@ -464,11 +570,25 @@ def _ejecutar_produccion_video():
     resultado = procesar_video_completo(
         ruta_video,
         st.session_state.guion,
-        st.session_state.plantilla_elegida,
+        plantilla_procesar,
         archivos_extra,
         st.session_state.formatos_seleccionados,
         progress_callback
     )
+
+    # Aplicar efectos visuales adicionales si fueron seleccionados
+    efectos_seleccionados = st.session_state.get('efectos_seleccionados', [])
+    if efectos_seleccionados and "error" not in resultado:
+        from video_processor import aplicar_efectos_visuales
+        status.markdown("✨ Aplicando efectos visuales...")
+        video_base = resultado["video_final"]
+        for efecto in efectos_seleccionados:
+            video_base = aplicar_efectos_visuales(
+                video_base,
+                efecto["id"],
+                efecto["intensidad"]
+            )
+        resultado["video_final"] = video_base
 
     if "error" not in resultado:
         # Descontar token
@@ -905,22 +1025,51 @@ def render_admin_page():
         with col2:
             if st.button("🧪 Probar conexión"):
                 groq = GroqAI(api_key)
-                if groq.esta_configurado():
-                    modelos = groq.listar_modelos()
-                    if modelos:
-                        st.success(f"✅ Conexión exitosa. {len(modelos)} modelos disponibles.")
-                        st.session_state.modelos_groq = modelos
-                    else:
-                        st.error("❌ No se pudieron obtener modelos. Verifica tu API key.")
-                else:
-                    st.error("❌ API key vacía")
+                with st.spinner("Probando conexión con Groq..."):
+                    resultado = groq.test_conexion()
 
-        if "modelos_groq" in st.session_state:
+                if resultado.get("ok"):
+                    st.success(f"✅ Conexión exitosa. Modelo: {resultado['modelo_activo']}")
+                    st.info(f"Max tokens detectado: {resultado.get('max_tokens_detectado', 'N/A')}")
+
+                    # Guardar el modelo detectado automáticamente
+                    update_config({"groq_model": resultado["modelo_activo"]})
+
+                    st.session_state.modelos_groq = resultado.get("modelos_disponibles", [])
+                else:
+                    st.error(f"❌ {resultado.get('error', 'Error desconocido')}")
+                    if "modelos_disponibles" in resultado:
+                        st.info("Modelos disponibles detectados.")
+
+        # Selección manual de modelo
+        if "modelos_groq" not in st.session_state:
+            # Cargar modelos disponibles si hay API key
+            if api_key:
+                groq_temp = GroqAI(api_key)
+                modelos_temp = groq_temp.listar_modelos()
+                if modelos_temp:
+                    st.session_state.modelos_groq = modelos_temp
+
+        if "modelos_groq" in st.session_state and st.session_state.modelos_groq:
             st.markdown("#### 🤖 Selecciona modelo")
-            modelo_actual = db["config"].get("groq_model", "llama-3.1-70b-versatile")
+            modelo_actual = db["config"].get("groq_model", "llama-3.1-8b-instant")
+
+            # Recomendar modelos de alta capacidad
+            modelos_recomendados = [m for m in MODELOS_RECOMENDADOS
+                                     if m in st.session_state.modelos_groq]
+
+            if modelos_recomendados:
+                st.info(f"💡 Recomendados (mayor capacidad): {', '.join(modelos_recomendados[:2])}")
+
+            try:
+                idx = st.session_state.modelos_groq.index(modelo_actual) if modelo_actual in st.session_state.modelos_groq else 0
+            except ValueError:
+                idx = 0
+
             modelo_sel = st.selectbox("Modelo de IA", st.session_state.modelos_groq,
-                                       index=st.session_state.modelos_groq.index(modelo_actual) if modelo_actual in st.session_state.modelos_groq else 0)
-            if st.button("💾 Guardar modelo"):
+                                       index=idx,
+                                       help="Los modelos 70b tienen mayor capacidad. Los 8b son más rápidos pero con límite de tokens menor.")
+            if st.button("💾 Guardar modelo seleccionado"):
                 update_config({"groq_model": modelo_sel})
                 st.success(f"✅ Modelo guardado: {modelo_sel}")
 

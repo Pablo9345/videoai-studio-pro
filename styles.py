@@ -923,74 +923,80 @@ def get_premium_css():
     return PREMIUM_CSS
 
 
+def html_safe(html: str) -> str:
+    """
+    Limpia HTML para usar con st.markdown(unsafe_allow_html=True).
+    Elimina saltos de línea y espacios innecesarios que pueden causar
+    que Streamlit interprete el HTML como markdown.
+    """
+    if not html:
+        return ""
+    # Colapsar whitespace entre tags
+    import re
+    # Eliminar saltos de línea y espacios entre tags
+    html = re.sub(r'>\s+<', '><', html)
+    # Eliminar saltos de línea sueltos dentro de tags
+    html = re.sub(r'\s+', ' ', html)
+    return html.strip()
+
+
 def render_template_preview_card(plantilla, index, selected=False):
     """
     Genera el HTML para una tarjeta de plantilla con vista previa visual real.
+    El HTML se devuelve en una sola línea para evitar problemas con Streamlit markdown.
     """
     selected_class = " selected" if selected else ""
     gradient_bg = f"linear-gradient(135deg, {plantilla['color_primario']} 0%, {plantilla['color_secundario']} 100%)"
 
-    html = f"""
-    <div class="template-card{selected_class}" id="tpl_{plantilla['id']}"
-         onclick="document.getElementById('tpl_input_{plantilla['id']}').click()">
-        <div class="template-preview" style="background: {gradient_bg};">
-            <div class="template-preview-content">
-                <div class="template-preview-title"
-                     style="color: {plantilla['color_texto']}; font-family: {plantilla['fuente']}, sans-serif;">
-                    {plantilla['nombre']}
-                </div>
-                <div class="template-preview-subtitle"
-                     style="color: {plantilla['color_texto']}; opacity: 0.85; font-family: {plantilla['fuente']}, sans-serif;">
-                    {plantilla.get('preview_texto', 'Tu texto aparecerá aquí')}
-                </div>
-                <div class="template-preview-cta"
-                     style="background: {plantilla.get('color_acento', '#FFFFFF')}33; color: {plantilla['color_texto']};
-                            border: 1px solid {plantilla.get('color_acento', '#FFFFFF')}80;">
-                    ▶ VER MÁS
-                </div>
-            </div>
-        </div>
-        <div class="template-card-body">
-            <div class="template-card-title">{plantilla['nombre']}</div>
-            <div class="template-card-desc">{plantilla['descripcion']}</div>
-            <div class="template-card-meta">
-                <span class="template-tag">{plantilla['estilo']}</span>
-                <span class="template-tag">{plantilla['transicion']}</span>
-                <span class="template-tag">{plantilla.get('categoria', 'General')}</span>
-            </div>
-            <div class="template-color-strip">
-                <div style="background: {plantilla['color_primario']};"></div>
-                <div style="background: {plantilla['color_secundario']};"></div>
-                <div style="background: {plantilla.get('color_acento', '#FFFFFF')};"></div>
-            </div>
-        </div>
-    </div>
-    """
+    html = (
+        f'<div class="template-card{selected_class}" id="tpl_{plantilla["id"]}">'
+        f'<div class="template-preview" style="background: {gradient_bg};">'
+        f'<div class="template-preview-content">'
+        f'<div class="template-preview-title" style="color: {plantilla["color_texto"]}; font-family: {plantilla["fuente"]}, sans-serif;">{plantilla["nombre"]}</div>'
+        f'<div class="template-preview-subtitle" style="color: {plantilla["color_texto"]}; opacity: 0.85; font-family: {plantilla["fuente"]}, sans-serif;">{plantilla.get("preview_texto", "Tu texto aparecerá aquí")}</div>'
+        f'<div class="template-preview-cta" style="background: {plantilla.get("color_acento", "#FFFFFF")}33; color: {plantilla["color_texto"]}; border: 1px solid {plantilla.get("color_acento", "#FFFFFF")}80;">▶ VER MÁS</div>'
+        f'</div></div>'
+        f'<div class="template-card-body">'
+        f'<div class="template-card-title">{plantilla["nombre"]}</div>'
+        f'<div class="template-card-desc">{plantilla["descripcion"]}</div>'
+        f'<div class="template-card-meta">'
+        f'<span class="template-tag">{plantilla["estilo"]}</span>'
+        f'<span class="template-tag">{plantilla["transicion"]}</span>'
+        f'<span class="template-tag">{plantilla.get("categoria", "General")}</span>'
+        f'</div>'
+        f'<div class="template-color-strip">'
+        f'<div style="background: {plantilla["color_primario"]};"></div>'
+        f'<div style="background: {plantilla["color_secundario"]};"></div>'
+        f'<div style="background: {plantilla.get("color_acento", "#FFFFFF")};"></div>'
+        f'</div>'
+        f'</div></div>'
+    )
     return html
 
 
 def render_stat_card(icon, value, label):
-    """Genera una tarjeta de estadística."""
-    return f"""
-    <div class="stat-card">
-        <div class="stat-icon">{icon}</div>
-        <div class="stat-value">{value}</div>
-        <div class="stat-label">{label}</div>
-    </div>
-    """
+    """Genera una tarjeta de estadística (HTML en una línea)."""
+    return (
+        f'<div class="stat-card">'
+        f'<div class="stat-icon">{icon}</div>'
+        f'<div class="stat-value">{value}</div>'
+        f'<div class="stat-label">{label}</div>'
+        f'</div>'
+    )
 
 
 def render_wizard_step(step_num, label, state="pending"):
     """
     state: 'pending' | 'active' | 'completed'
+    HTML en una sola línea para evitar problemas con Streamlit markdown.
     """
     icon = step_num if state != "completed" else "✓"
-    return f"""
-    <div class="wizard-step {state}">
-        <div class="wizard-step-circle">{icon}</div>
-        <div class="wizard-step-label">{label}</div>
-    </div>
-    """
+    return (
+        f'<div class="wizard-step {state}">'
+        f'<div class="wizard-step-circle">{icon}</div>'
+        f'<div class="wizard-step-label">{label}</div>'
+        f'</div>'
+    )
 
 
 def render_wizard(current_step, steps):
@@ -998,6 +1004,7 @@ def render_wizard(current_step, steps):
     Renderiza el wizard completo.
     current_step: int (1-indexed)
     steps: list of step labels
+    Devuelve HTML en una sola línea.
     """
     html = '<div class="wizard-steps">'
     for i, label in enumerate(steps, 1):
@@ -1013,40 +1020,34 @@ def render_wizard(current_step, steps):
 
 
 def render_scene_card(scene_num, descripcion, texto_pantalla, duracion, imagen_sugerida=""):
-    """Renderiza una tarjeta de escena del guion."""
-    img_html = ""
-    if imagen_sugerida:
-        img_html = f"""<div class="scene-meta"><span>🎬 {imagen_sugerida}</span></div>"""
-    return f"""
-    <div class="scene-card">
-        <span class="scene-number">{scene_num}</span>
-        <strong style="color: var(--text-primary) !important;">Escena {scene_num}</strong>
-        <div class="scene-text">{descripcion}</div>
-        {f'<div class="scene-text" style="margin-top:0.4rem; font-style:italic;">💬 "{texto_pantalla}"</div>' if texto_pantalla else ''}
-        <div class="scene-meta">
-            <span>⏱ {duracion}s</span>
-        </div>
-        {img_html}
-    </div>
-    """
+    """Renderiza una tarjeta de escena del guion (HTML en una línea)."""
+    img_html = f'<div class="scene-meta"><span>🎬 {imagen_sugerida}</span></div>' if imagen_sugerida else ''
+    texto_html = f'<div class="scene-text" style="margin-top:0.4rem; font-style:italic;">💬 "{texto_pantalla}"</div>' if texto_pantalla else ''
+    return (
+        f'<div class="scene-card">'
+        f'<span class="scene-number">{scene_num}</span>'
+        f'<strong style="color: var(--text-primary) !important;">Escena {scene_num}</strong>'
+        f'<div class="scene-text">{descripcion}</div>'
+        f'{texto_html}'
+        f'<div class="scene-meta"><span>⏱ {duracion}s</span></div>'
+        f'{img_html}'
+        f'</div>'
+    )
 
 
 def render_pricing_card(plan, featured=False):
-    """Renderiza una tarjeta de plan de precios."""
+    """Renderiza una tarjeta de plan de precios (HTML en una línea)."""
     featured_class = " featured" if featured else ""
     features_html = "".join(f"<li>{f}</li>" for f in plan["features"])
-    return f"""
-    <div class="pricing-card{featured_class}">
-        <div class="pricing-name">{plan['nombre']}</div>
-        <div class="pricing-price">
-            <span class="pricing-price-currency">$</span>{plan['precio']}
-            <span class="pricing-price-period">/mes</span>
-        </div>
-        <div style="color: var(--text-muted) !important; margin-bottom: 1rem; font-size: 0.9rem;">
-            {plan['tokens']} tokens incluidos
-        </div>
-        <ul class="pricing-features">
-            {features_html}
-        </ul>
-    </div>
-    """
+    return (
+        f'<div class="pricing-card{featured_class}">'
+        f'<div class="pricing-name">{plan["nombre"]}</div>'
+        f'<div class="pricing-price">'
+        f'<span class="pricing-price-currency">$</span>{plan["precio"]}'
+        f'<span class="pricing-price-period">/mes</span>'
+        f'</div>'
+        f'<div style="color: var(--text-muted) !important; margin-bottom: 1rem; font-size: 0.9rem;">'
+        f'{plan["tokens"]} tokens incluidos</div>'
+        f'<ul class="pricing-features">{features_html}</ul>'
+        f'</div>'
+    )

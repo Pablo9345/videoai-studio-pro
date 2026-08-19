@@ -43,7 +43,7 @@ def _default_db() -> Dict[str, Any]:
         "membresias": MEMBRESIAS,
         "config": {
             "groq_api_key": os.environ.get("GROQ_API_KEY", ""),
-            "groq_model": "llama-3.1-70b-versatile",
+            "groq_model": "llama-3.1-8b-instant",
             "whisper_model": "base",
             "admin_password_hash": _hash_password("admin123"),
             "brand_name": "VideoAI Studio Pro",
