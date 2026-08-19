@@ -331,3 +331,170 @@ def eliminar_plantilla_personalizada(plantilla_id: str) -> bool:
         guardar_db(db)
         return True
     return False
+
+
+def listar_plantillas_personalizadas() -> list:
+    """Lista todas las plantillas personalizadas."""
+    db = cargar_db()
+    return db.get("plantillas_personalizadas", [])
+
+
+def guardar_plantilla_usuario(uid: str, plantilla: Dict[str, Any],
+                               nombre: str = None) -> bool:
+    """
+    Guarda una plantilla personalizada asociada a un usuario.
+    Permite reutilizarla como imagen corporativa.
+    """
+    db = cargar_db()
+    if "plantillas_usuario" not in db:
+        db["plantillas_usuario"] = []
+
+    plantilla_guardada = {
+        "id": str(uuid.uuid4()),
+        "uid": uid,
+        "nombre": nombre or plantilla.get("nombre", "Mi Plantilla"),
+        "plantilla": plantilla,
+        "fecha_creacion": datetime.now().isoformat(),
+        "es_corporativa": False,  # El usuario puede marcarla como corporativa
+    }
+    db["plantillas_usuario"].append(plantilla_guardada)
+    guardar_db(db)
+    return True
+
+
+def listar_plantillas_usuario(uid: str) -> list:
+    """Lista las plantillas personalizadas de un usuario."""
+    db = cargar_db()
+    return [p for p in db.get("plantillas_usuario", []) if p.get("uid") == uid]
+
+
+def eliminar_plantilla_usuario(plantilla_id: str) -> bool:
+    """Elimina una plantilla personalizada del usuario."""
+    db = cargar_db()
+    if "plantillas_usuario" not in db:
+        return False
+    antes = len(db["plantillas_usuario"])
+    db["plantillas_usuario"] = [
+        p for p in db["plantillas_usuario"] if p["id"] != plantilla_id
+    ]
+    if len(db["plantillas_usuario"]) < antes:
+        guardar_db(db)
+        return True
+    return False
+
+
+def marcar_plantilla_corporativa(plantilla_id: str, es_corporativa: bool = True) -> bool:
+    """Marca una plantilla como imagen corporativa del usuario."""
+    db = cargar_db()
+    if "plantillas_usuario" not in db:
+        return False
+    for p in db["plantillas_usuario"]:
+        if p["id"] == plantilla_id:
+            p["es_corporativa"] = es_corporativa
+            guardar_db(db)
+            return True
+    return False
+
+
+# ============ AGENDA DE PUBLICACIONES ============
+
+def agregar_publicacion_agenda(uid: str, publicacion: Dict[str, Any]) -> bool:
+    """
+    Agrega una publicación programada a la agenda del usuario.
+    publicacion: {fecha, plataforma, titulo, video_path, estado}
+    """
+    db = cargar_db()
+    if "agenda_publicaciones" not in db:
+        db["agenda_publicaciones"] = []
+
+    publicacion["id"] = str(uuid.uuid4())
+    publicacion["uid"] = uid
+    publicacion["fecha_creacion"] = datetime.now().isoformat()
+    publicacion["estado"] = publicacion.get("estado", "programada")
+    db["agenda_publicaciones"].append(publicacion)
+    guardar_db(db)
+    return True
+
+
+def listar_agenda_usuario(uid: str) -> list:
+    """Lista las publicaciones programadas de un usuario."""
+    db = cargar_db()
+    pubs = [p for p in db.get("agenda_publicaciones", []) if p.get("uid") == uid]
+    # Ordenar por fecha programada
+    pubs.sort(key=lambda x: x.get("fecha_programada", ""), reverse=False)
+    return pubs
+
+
+def actualizar_publicacion_agenda(publicacion_id: str, cambios: Dict[str, Any]) -> bool:
+    """Actualiza una publicación de la agenda."""
+    db = cargar_db()
+    if "agenda_publicaciones" not in db:
+        return False
+    for p in db["agenda_publicaciones"]:
+        if p["id"] == publicacion_id:
+            p.update(cambios)
+            guardar_db(db)
+            return True
+    return False
+
+
+def eliminar_publicacion_agenda(publicacion_id: str) -> bool:
+    """Elimina una publicación de la agenda."""
+    db = cargar_db()
+    if "agenda_publicaciones" not in db:
+        return False
+    antes = len(db["agenda_publicaciones"])
+    db["agenda_publicaciones"] = [
+        p for p in db["agenda_publicaciones"] if p["id"] != publicacion_id
+    ]
+    if len(db["agenda_publicaciones"]) < antes:
+        guardar_db(db)
+        return True
+    return False
+
+
+# ============ MÉTRICAS Y ANÁLISIS ============
+
+def guardar_metricas_posteo(uid: str, metricas: Dict[str, Any]) -> bool:
+    """
+    Guarda las métricas de un posteo publicado.
+    metricas: {posteo_id, plataforma, likes, comments, shares, views, fecha}
+    """
+    db = cargar_db()
+    if "metricas_posteos" not in db:
+        db["metricas_posteos"] = []
+
+    metricas["id"] = str(uuid.uuid4())
+    metricas["uid"] = uid
+    metricas["fecha_registro"] = datetime.now().isoformat()
+    db["metricas_posteos"].append(metricas)
+    guardar_db(db)
+    return True
+
+
+def listar_metricas_usuario(uid: str) -> list:
+    """Lista las métricas de posteos de un usuario."""
+    db = cargar_db()
+    return [m for m in db.get("metricas_posteos", []) if m.get("uid") == uid]
+
+
+def guardar_analisis_comentarios(uid: str, posteo_id: str,
+                                   analisis: Dict[str, Any]) -> bool:
+    """Guarda el análisis de comentarios de un posteo."""
+    db = cargar_db()
+    if "analisis_comentarios" not in db:
+        db["analisis_comentarios"] = []
+
+    analisis["id"] = str(uuid.uuid4())
+    analisis["uid"] = uid
+    analisis["posteo_id"] = posteo_id
+    analisis["fecha_analisis"] = datetime.now().isoformat()
+    db["analisis_comentarios"].append(analisis)
+    guardar_db(db)
+    return True
+
+
+def listar_analisis_comentarios(uid: str) -> list:
+    """Lista los análisis de comentarios de un usuario."""
+    db = cargar_db()
+    return [a for a in db.get("analisis_comentarios", []) if a.get("uid") == uid]

@@ -32,8 +32,22 @@ from preview_renderer import generar_preview_animado, generar_preview_compacto
 def render_template_gallery(selected_id=None, categorias_filter=None):
     """
     Renderiza la galería completa de plantillas con vista previa.
-    Permite filtrar por categoría y seleccionar.
+    - El botón de selección está SOBRE el bloque, activo
+    - Hacer clic en una plantilla la selecciona
+    - 'Ver Preview Animado' muestra el modal con animación
+    - Se puede salir del preview
     """
+    # Header con instrucciones
+    st.markdown("""
+    <div style="background: var(--bg-glass); border: 1px solid var(--border-glass);
+                border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+        <p style="margin: 0; color: var(--text-secondary) !important; font-size: 0.9rem;">
+            👆 <strong>Haz clic en una plantilla para seleccionarla</strong> ·
+            Usa <strong>"▶ Ver Preview Animado"</strong> para ver cómo se verá tu video
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Filtro de categorías
     categorias = ["Todas"] + get_categorias()
     cols_filtros = st.columns([2, 1])
@@ -59,15 +73,19 @@ def render_template_gallery(selected_id=None, categorias_filter=None):
     for i, plantilla in enumerate(plantillas_a_mostrar):
         with cols[i % 3]:
             selected = (selected_id == plantilla["id"])
-            html_card = render_template_preview_card(plantilla, i, selected)
-            st.markdown(html_safe(html_card), unsafe_allow_html=True)
-            # Botón de selección
-            btn_label = "✓ Seleccionada" if selected else f"Usar {plantilla['nombre']}"
+
+            # Botón SELECCIONAR ARRIBA (sobre el bloque), siempre activo
+            btn_label = "✓ SELECCIONADA" if selected else f"📋 {plantilla['nombre']}"
             if st.button(btn_label, key=f"tpl_btn_{plantilla['id']}",
                          use_container_width=True,
                          type="primary" if selected else "secondary"):
                 st.session_state.plantilla_elegida = plantilla
                 st.rerun()
+
+            # Tarjeta visual de la plantilla (clicable)
+            html_card = render_template_preview_card(plantilla, i, selected)
+            st.markdown(html_safe(html_card), unsafe_allow_html=True)
+
             # Botón de preview animado
             if st.button("▶ Ver Preview Animado", key=f"tpl_prev_{plantilla['id']}",
                          use_container_width=True,
@@ -78,7 +96,7 @@ def render_template_gallery(selected_id=None, categorias_filter=None):
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Mostrar modal de preview si se solicitó
-    if "preview_plantilla_id" in st.session_state:
+    if "preview_plantilla_id" in st.session_state and st.session_state.preview_plantilla_id:
         plantilla_preview = get_plantilla_by_id(st.session_state.preview_plantilla_id)
         if plantilla_preview:
             render_preview_modal(plantilla_preview)
@@ -380,127 +398,124 @@ def render_project_card(proyecto, index):
 
 # ============ MODAL DE PREVIEW ANIMADO ============
 def render_preview_modal(plantilla: Dict[str, Any]):
-    """Renderiza un modal con preview animado de la plantilla seleccionada."""
-    from styles import html_safe
-
+    """
+    Renderiza un modal con preview animado de la plantilla seleccionada.
+    Usa st.container con border para simular un modal funcional en Streamlit.
+    """
     plantilla_nombre = plantilla.get("nombre", "Plantilla")
     plantilla_id = plantilla.get("id", "unknown")
 
-    # Container estilo modal
-    st.markdown(f"""
-    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(0,0,0,0.85); z-index: 9999;
-                display: flex; align-items: center; justify-content: center;
-                padding: 2rem; backdrop-filter: blur(8px);">
-        <div style="background: var(--bg-secondary); border-radius: 18px;
-                    max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto;
-                    border: 1px solid var(--border-glass); box-shadow: 0 24px 60px rgba(0,0,0,0.5);">
-            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-glass);
-                        display: flex; justify-content: space-between; align-items: center;
-                        background: var(--bg-glass); border-radius: 18px 18px 0 0;">
-                <h3 style="color: var(--text-primary) !important; margin: 0;">
-                    🎬 Preview: {plantilla_nombre}
-                </h3>
-            </div>
-            <div style="padding: 1rem;">
-                <p style="color: var(--text-secondary) !important; margin-bottom: 1rem;">
-                    Esta es una simulación animada de cómo se verá tu video con la plantilla seleccionada.
-                    Incluye intro, escenas y outro con la paleta y tipografía real.
-                </p>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Formulario para personalizar el preview
-    st.markdown("### 🎨 Personaliza tu preview")
-    col1, col2 = st.columns(2)
-    with col1:
-        titulo_preview = st.text_input("Título del video",
-                                       value="Mi Video Increíble",
-                                       key=f"prev_title_{plantilla_id}")
-        tipo_preview = st.selectbox("Tipo de contenido",
-                                    ["Publicitario", "Institucional", "Educativo",
-                                     "Entretenimiento", "Tutorial", "Vlog"],
-                                    key=f"prev_tipo_{plantilla_id}")
-    with col2:
-        duracion_preview = st.slider("Duración objetivo (min)", 1, 10, 2,
-                                     key=f"prev_dur_{plantilla_id}")
-
-    # Preview animado en vivo
-    st.markdown("### ▶ Preview en vivo")
-    html_preview = generar_preview_animado(
-        plantilla, titulo_preview, tipo_preview, duracion_preview
-    )
-    # Usar components.html para renderizar HTML completo con animaciones
-    components.html(html_preview, height=500, scrolling=False)
-
-    # Información detallada de la plantilla
-    st.markdown("### 📋 Detalles de la plantilla")
-    detalles_col1, detalles_col2 = st.columns(2)
-
-    with detalles_col1:
-        st.markdown(f"""
-        **Nombre:** {plantilla.get('nombre', 'N/A')}  
-        **Categoría:** {plantilla.get('categoria', 'N/A')}  
-        **Estilo:** {plantilla.get('estilo', 'N/A')}  
-        **Transición:** {plantilla.get('transicion', 'N/A')}  
-        **Duración transición:** {plantilla.get('duracion_transicion', 0.5)}s  
-        **Fuente:** {plantilla.get('fuente', 'N/A')}
-        """)
-
-    with detalles_col2:
-        config = plantilla.get('config_avanzada', {})
-        st.markdown(f"""
-        **Color grading:** {config.get('color_grading', 'N/A')}  
-        **FPS:** {config.get('fps', 30)}  
-        **Duración intro:** {config.get('intro_duracion', 3)}s  
-        **Duración outro:** {config.get('outro_duracion', 3)}s  
-        **Subtítulo tamaño:** {config.get('subtitulo_tamano', 22)}px  
-        **Posición subtítulo:** {config.get('subtitulo_posicion', 'bottom')}
-        """)
-
-    # Paleta de colores
-    st.markdown("### 🎨 Paleta de colores")
-    paleta_cols = st.columns(4)
-    paleta = [
-        ("Primario", plantilla.get('color_primario', '#000')),
-        ("Secundario", plantilla.get('color_secundario', '#000')),
-        ("Acento", plantilla.get('color_acento', '#FFF')),
-        ("Texto", plantilla.get('color_texto', '#FFF')),
-    ]
-    for i, (nombre, color) in enumerate(paleta):
-        with paleta_cols[i]:
-            st.markdown(f"""
-            <div style="background: {color}; padding: 20px; border-radius: 10px;
-                        text-align: center; color: {'#000' if color in ['#FFFFFF', '#FBCFE8'] else '#FFF'};
-                        font-weight: 700; border: 2px solid var(--border-glass);">
-                <div style="font-size: 0.85rem; opacity: 0.8;">{nombre}</div>
-                <div style="font-size: 0.9rem;">{color}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # Acciones
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("✖ Cerrar", key=f"close_prev_{plantilla_id}", use_container_width=True):
-            del st.session_state.preview_plantilla_id
-            st.rerun()
-    with col2:
-        ya_seleccionada = st.session_state.get('plantilla_elegida', {}).get('id') == plantilla_id
-        if ya_seleccionada:
-            st.success("✓ Esta plantilla ya está seleccionada")
-        else:
-            if st.button(f"✓ Usar esta plantilla", type="primary",
-                         key=f"use_prev_{plantilla_id}", use_container_width=True):
-                st.session_state.plantilla_elegida = plantilla
-                del st.session_state.preview_plantilla_id
-                st.success(f"✅ Plantilla '{plantilla_nombre}' seleccionada!")
+    # Modal container con borde destacado
+    with st.container(border=True):
+        # Header del modal con botón cerrar
+        header_col1, header_col2 = st.columns([5, 1])
+        with header_col1:
+            st.markdown(f"### 🎬 Preview Animado: {plantilla_nombre}")
+        with header_col2:
+            if st.button("✖ Cerrar", key=f"close_prev_{plantilla_id}",
+                         use_container_width=True, type="secondary"):
+                st.session_state.preview_plantilla_id = None
                 st.rerun()
-    with col3:
-        # Espacio para equilibrio
-        st.write("")
+
+        st.markdown("---")
+
+        # Descripción
+        st.info("👆 Esta es una simulación animada de cómo se verá tu video con esta plantilla. "
+                "Incluye intro, escenas y outro con la paleta y tipografía real. "
+                "Personaliza los campos abajo para ver cómo cambia.")
+
+        # Formulario para personalizar el preview
+        st.markdown("### 🎨 Personaliza tu preview")
+        col1, col2 = st.columns(2)
+        with col1:
+            titulo_preview = st.text_input("Título del video",
+                                           value="Mi Video Increíble",
+                                           key=f"prev_title_{plantilla_id}")
+            tipo_preview = st.selectbox("Tipo de contenido",
+                                        ["Publicitario", "Institucional", "Educativo",
+                                         "Entretenimiento", "Tutorial", "Vlog"],
+                                        key=f"prev_tipo_{plantilla_id}")
+        with col2:
+            duracion_preview = st.slider("Duración objetivo (min)", 1, 10, 2,
+                                         key=f"prev_dur_{plantilla_id}")
+            st.markdown("")  # Espaciado
+            st.markdown(f"**Estilo:** {plantilla.get('estilo', 'N/A')}")
+
+        # Preview animado en vivo
+        st.markdown("### ▶ Preview en vivo (animación HTML)")
+        html_preview = generar_preview_animado(
+            plantilla, titulo_preview, tipo_preview, duracion_preview
+        )
+        # Usar components.html para renderizar HTML completo con animaciones
+        components.html(html_preview, height=500, scrolling=False)
+
+        # Información detallada de la plantilla
+        with st.expander("📋 Ver detalles técnicos de la plantilla", expanded=False):
+            detalles_col1, detalles_col2 = st.columns(2)
+
+            with detalles_col1:
+                st.markdown(f"""
+                **Nombre:** {plantilla.get('nombre', 'N/A')}  
+                **Categoría:** {plantilla.get('categoria', 'N/A')}  
+                **Estilo:** {plantilla.get('estilo', 'N/A')}  
+                **Transición:** {plantilla.get('transicion', 'N/A')}  
+                **Duración transición:** {plantilla.get('duracion_transicion', 0.5)}s  
+                **Fuente:** {plantilla.get('fuente', 'N/A')}
+                """)
+
+            with detalles_col2:
+                config = plantilla.get('config_avanzada', {})
+                st.markdown(f"""
+                **Color grading:** {config.get('color_grading', 'N/A')}  
+                **FPS:** {config.get('fps', 30)}  
+                **Duración intro:** {config.get('intro_duracion', 3)}s  
+                **Duración outro:** {config.get('outro_duracion', 3)}s  
+                **Subtítulo tamaño:** {config.get('subtitulo_tamano', 22)}px  
+                **Posición subtítulo:** {config.get('subtitulo_posicion', 'bottom')}
+                """)
+
+            # Paleta de colores
+            st.markdown("**🎨 Paleta de colores:**")
+            paleta_cols = st.columns(4)
+            paleta = [
+                ("Primario", plantilla.get('color_primario', '#000')),
+                ("Secundario", plantilla.get('color_secundario', '#000')),
+                ("Acento", plantilla.get('color_acento', '#FFF')),
+                ("Texto", plantilla.get('color_texto', '#FFF')),
+            ]
+            for i, (nombre, color) in enumerate(paleta):
+                with paleta_cols[i]:
+                    st.markdown(f"""
+                    <div style="background: {color}; padding: 16px; border-radius: 10px;
+                                text-align: center; color: {'#000' if color in ['#FFFFFF', '#FBCFE8'] else '#FFF'};
+                                font-weight: 700; border: 2px solid rgba(99,102,241,0.2);">
+                        <div style="font-size: 0.8rem; opacity: 0.8;">{nombre}</div>
+                        <div style="font-size: 0.85rem;">{color}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        # Acciones
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            if st.button("✖ Cerrar", key=f"close_prev2_{plantilla_id}",
+                         use_container_width=True, type="secondary"):
+                st.session_state.preview_plantilla_id = None
+                st.rerun()
+        with col2:
+            ya_seleccionada = st.session_state.get('plantilla_elegida', {}).get('id') == plantilla_id
+            if ya_seleccionada:
+                st.success("✓ Esta plantilla ya está seleccionada")
+            else:
+                if st.button(f"✓ Usar esta plantilla", type="primary",
+                             key=f"use_prev_{plantilla_id}", use_container_width=True):
+                    st.session_state.plantilla_elegida = plantilla
+                    st.session_state.preview_plantilla_id = None
+                    st.success(f"✅ Plantilla '{plantilla_nombre}' seleccionada!")
+                    st.rerun()
+        with col3:
+            # Espacio para equilibrio
+            st.write("")
 
 
 # ============ SELECTOR DE TRANSICIONES ============

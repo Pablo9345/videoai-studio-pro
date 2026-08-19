@@ -181,7 +181,8 @@ def render_user_sidebar():
     vista = st.radio(
         "📍 Navegación",
         ["🏠 Inicio", "📤 Producción", "🎨 Plantillas",
-         "📊 Mis Proyectos", "💡 Ideas IA", "💎 Planes", "⚙️ Configuración"],
+         "💡 Ideas IA", "📱 Redes Sociales", "📅 Agenda",
+         "📊 Análisis", "🎬 Mis Proyectos", "💎 Planes", "⚙️ Configuración"],
         key="nav_radio"
     )
 
@@ -190,8 +191,11 @@ def render_user_sidebar():
         "🏠 Inicio": "home",
         "📤 Producción": "process",
         "🎨 Plantillas": "templates",
-        "📊 Mis Proyectos": "projects",
         "💡 Ideas IA": "ideas",
+        "📱 Redes Sociales": "redes",
+        "📅 Agenda": "agenda",
+        "📊 Análisis": "analisis",
+        "🎬 Mis Proyectos": "projects",
         "💎 Planes": "plans",
         "⚙️ Configuración": "config"
     }
