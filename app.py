@@ -28,7 +28,7 @@ from styles import PREMIUM_CSS
 from database import (
     cargar_db, guardar_db, get_config, update_config,
     obtener_usuario, usar_token, verificar_tokens, agregar_proyecto,
-    cambiar_plan, get_dashboard_data, verify_admin_password,
+    cambiar_plan, get_dashboard_data, get_stats, verify_admin_password,
     set_admin_password, listar_usuarios
 )
 from auth import (
