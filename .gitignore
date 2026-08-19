@@ -1,0 +1,51 @@
+# Archivos temporales
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Entorno virtual
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Datos y sesiones
+/tmp/
+*.db
+*.sqlite
+sistema.json
+backups/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Archivos de output locales
+outputs/
+uploads/
+imagenes/
+plantillas/
+database/
+temp/

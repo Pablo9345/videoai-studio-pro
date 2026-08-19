@@ -1,0 +1,14 @@
+# VideoAI Studio Pro - Dependencias
+# Compatible con Streamlit Cloud
+
+streamlit>=1.38.0
+requests>=2.31.0
+openai-whisper>=20231117
+ffmpeg-python>=0.2.0
+
+# NumPy (dependencia de Whisper, fijada para compatibilidad)
+numpy>=1.24.0,<2.0.0
+
+# Utilidades
+python-dotenv>=1.0.0
+pathlib>=1.0.1

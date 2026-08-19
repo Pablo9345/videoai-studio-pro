@@ -1,0 +1,1077 @@
+"""
+VideoAI Studio Pro - Aplicación principal
+Plataforma de producción de video profesional con IA.
+Diseñada para Streamlit Cloud + GitHub.
+"""
+
+import streamlit as st
+import os
+import json
+from datetime import datetime
+from pathlib import Path
+
+# Configuración de página (debe ser lo primero)
+st.set_page_config(
+    page_title="VideoAI Studio Pro - Producción de Video con IA",
+    page_icon="🎬",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://github.com/tu-usuario/videoai-studio-pro',
+        'Report a bug': 'https://github.com/tu-usuario/videoai-studio-pro/issues',
+        'About': "VideoAI Studio Pro - Plataforma de producción de video profesional con IA"
+    }
+)
+
+# Imports del proyecto
+from styles import PREMIUM_CSS
+from database import (
+    cargar_db, guardar_db, get_config, update_config,
+    obtener_usuario, usar_token, verificar_tokens, agregar_proyecto,
+    cambiar_plan, get_dashboard_data, verify_admin_password,
+    set_admin_password, listar_usuarios
+)
+from auth import (
+    init_session_state, is_logged_in, is_admin, logout,
+    render_login_form, render_user_sidebar
+)
+from groq_ai import GroqAI
+from video_processor import procesar_video_completo
+from components import (
+    render_template_gallery, render_processing_animation,
+    render_stat_grid, render_guion_visualization,
+    render_pricing_section, render_wizard_nav,
+    render_format_selector, render_upload_zone,
+    render_project_card
+)
+from templates_data import (
+    PLANTILLAS_PROFESIONALES, get_plantilla_by_id, get_plantilla_default,
+    MEMBRESIAS
+)
+from database import UPLOADS, OUTPUTS, TEMP_DIR
+
+# ============ ESTILOS GLOBALES ============
+st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
+
+# ============ INICIALIZACIÓN ============
+init_session_state()
+
+
+def render_home_page():
+    """Página de inicio atractiva."""
+    st.markdown("""
+    <div class="hero-section">
+        <div class="hero-title">VideoAI Studio Pro</div>
+        <div class="hero-subtitle">
+            La plataforma todo-en-uno para crear videos profesionales con inteligencia artificial.
+            Guiones inteligentes, plantillas premium y exportación multi-formato.
+        </div>
+        <div class="hero-badges">
+            <span class="hero-badge hero-badge-accent">✨ 12+ Plantillas Pro</span>
+            <span class="hero-badge">🎬 Multi-formato (YT, TT, IG)</span>
+            <span class="hero-badge">🤖 IA Groq Llama 3.1</span>
+            <span class="hero-badge">📝 Subtítulos Automáticos</span>
+            <span class="hero-badge">🎨 Color Grading</span>
+            <span class="hero-badge">🎵 Audio Ducking</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Stats de la plataforma
+    st.markdown("### 📊 Potencia de la plataforma")
+    stats = [
+        {"icon": "🎬", "value": "12+", "label": "Plantillas Pro"},
+        {"icon": "⚡", "value": "< 5 min", "label": "Tiempo promedio"},
+        {"icon": "📱", "value": "3", "label": "Formatos simultáneos"},
+        {"icon": "🤖", "value": "100%", "label": "Automatizado por IA"},
+    ]
+    render_stat_grid(stats)
+
+    st.markdown("---")
+
+    # Features
+    st.markdown("### 🚀 Funcionalidades profesionales")
+    features = [
+        ("🧠", "Guion IA", "Generación automática de guiones con hook, escenas estructuradas y CTA optimizado"),
+        ("🎨", "12+ Plantillas", "Plantillas categorizadas para cada caso: Marketing, Tech, Educativo, Vlog, etc."),
+        ("🎬", "Edición Pro", "Transiciones cinematográficas, efectos Ken Burns e intros animadas"),
+        ("🎨", "Color Grading", "Presets de color: cinemático, cálido, frío, vibrante y neutro"),
+        ("🎵", "Audio Ducking", "Mezcla inteligente: la música baja automáticamente cuando hay voz"),
+        ("📝", "Subtítulos Auto", "Transcripción con Whisper y subtítulos quemados con estilo personalizable"),
+        ("📱", "Multi-Formato", "Exporta a YouTube (16:9), TikTok (9:16) e Instagram (1:1) simultáneamente"),
+        ("🤖", "Metadata IA", "Títulos SEO, hashtags, descripciones y conceptos de miniatura generados por IA"),
+    ]
+
+    cols = st.columns(4)
+    for i, (icon, title, desc) in enumerate(features):
+        with cols[i % 4]:
+            st.markdown(f"""
+            <div class="glass-card-feature">
+                <div class="feature-icon">{icon}</div>
+                <div class="feature-title">{title}</div>
+                <div class="feature-desc">{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # CTA
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 Empezar a crear ahora", type="primary", use_container_width=True):
+            st.session_state.vista = "auth"
+            st.rerun()
+
+
+def render_process_page():
+    """Página principal de producción de video con wizard."""
+    usuario = st.session_state.usuario
+
+    # Hero compacto
+    st.markdown("""
+    <div class="glass-card" style="border-left: 4px solid var(--accent-primary); margin-bottom: 1.5rem;">
+        <h2 style="color: var(--text-primary) !important; margin: 0;">
+            📤 Producción de Video Profesional
+        </h2>
+        <p style="color: var(--text-secondary) !important; margin: 0.5rem 0 0 0;">
+            Sigue los pasos para crear tu video profesional con IA
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Verificar tokens
+    if usuario['tokens'] <= 0:
+        st.markdown("""
+        <div class="custom-alert custom-alert-warning">
+            <strong>⚠ Sin tokens disponibles</strong>
+            <div style="margin-top: 0.3rem;">
+                Has agotado tus tokens. Actualiza tu plan para continuar creando videos.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("💎 Ver planes", type="primary"):
+            st.session_state.vista = "plans"
+            st.rerun()
+        return
+
+    # Wizard
+    render_wizard_nav(st.session_state.wizard_step)
+
+    # ============ PASO 1: SUBIR MATERIAL ============
+    if st.session_state.wizard_step == 1:
+        st.markdown("### 📁 Paso 1: Sube tu material")
+        video_principal, videos_extra, imagenes, audio_musica = render_upload_zone()
+
+        # Guardar archivos inmediatamente en disco cuando se suben
+        # Esto evita que se pierdan al navegar entre pasos del wizard
+        timestamp_preview = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archivos_guardados = {"videos": [], "imagenes": [], "audio": None, "principal": None}
+
+        if video_principal is not None:
+            ruta_v = UPLOADS / f"{timestamp_preview}_main_{video_principal.name}"
+            with open(ruta_v, 'wb') as f:
+                f.write(video_principal.getbuffer())
+            archivos_guardados["principal"] = str(ruta_v)
+            archivos_guardados["principal_name"] = video_principal.name
+
+        if videos_extra:
+            for v in videos_extra:
+                ruta_v = UPLOADS / f"{timestamp_preview}_extra_{v.name}"
+                with open(ruta_v, 'wb') as f:
+                    f.write(v.getbuffer())
+                archivos_guardados["videos"].append(str(ruta_v))
+
+        if imagenes:
+            for img in imagenes:
+                ruta_img = UPLOADS / f"{timestamp_preview}_img_{img.name}"
+                with open(ruta_img, 'wb') as f:
+                    f.write(img.getbuffer())
+                archivos_guardados["imagenes"].append(str(ruta_img))
+
+        if audio_musica:
+            ruta_audio = UPLOADS / f"{timestamp_preview}_audio_{audio_musica.name}"
+            with open(ruta_audio, 'wb') as f:
+                f.write(audio_musica.getbuffer())
+            archivos_guardados["audio"] = str(ruta_audio)
+
+        # Guardar en session state
+        st.session_state.archivos_guardados = archivos_guardados
+
+        # Mostrar resumen de archivos cargados
+        if archivos_guardados["principal"] or archivos_guardados["videos"] or archivos_guardados["imagenes"] or archivos_guardados["audio"]:
+            st.markdown("""
+            <div class="glass-card" style="border-left: 4px solid var(--accent-success);">
+                <strong style="color: var(--accent-success) !important;">✅ Archivos cargados:</strong>
+            """, unsafe_allow_html=True)
+            if archivos_guardados["principal"]:
+                st.write(f"🎬 Video principal: **{archivos_guardados['principal_name']}**")
+            if archivos_guardados["videos"]:
+                st.write(f"🎥 Videos extra: **{len(archivos_guardados['videos'])}** archivos")
+            if archivos_guardados["imagenes"]:
+                st.write(f"🖼 Imágenes: **{len(archivos_guardados['imagenes'])}** archivos")
+            if archivos_guardados["audio"]:
+                st.write(f"🎵 Audio: **cargado**")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("⏭ Siguiente", type="primary", use_container_width=True):
+                if not archivos_guardados["principal"]:
+                    st.warning("Debes subir al menos un video principal")
+                else:
+                    st.session_state.wizard_step = 2
+                    st.rerun()
+        with col2:
+            if st.button("🔄 Limpiar", use_container_width=True):
+                st.session_state.archivos_guardados = None
+                st.rerun()
+
+    # ============ PASO 2: DESCRIBIR PROYECTO ============
+    elif st.session_state.wizard_step == 2:
+        st.markdown("### 📝 Paso 2: Describe tu proyecto")
+
+        with st.container():
+            texto_objetivo = st.text_area(
+                "🎯 ¿Qué mensaje quieres transmitir?",
+                height=120,
+                placeholder="Ej: Quiero promocionar mi curso online de marketing digital. Mi público objetivo son emprendedores de 25-40 años interesados en aumentar sus ventas online. El tono debe ser motivador y profesional...",
+                key="texto_objetivo_input"
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                tipo_contenido = st.selectbox(
+                    "📂 Tipo de contenido",
+                    ["Publicitario", "Institucional", "Educativo", "Entretenimiento",
+                     "Tutorial", "Vlog", "Review de producto", "Storytelling"],
+                    key="tipo_contenido_sel"
+                )
+            with col2:
+                duracion_objetivo = st.slider(
+                    "⏱ Duración aproximada (minutos)",
+                    min_value=1, max_value=15, value=3, step=1,
+                    key="duracion_slider"
+                )
+
+            publico_objetivo = st.text_input(
+                "👥 Público objetivo (opcional)",
+                placeholder="Ej: Emprendedores, estudiantes, profesionales tech...",
+                key="publico_input"
+            )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅ Anterior", use_container_width=True):
+                st.session_state.wizard_step = 1
+                st.rerun()
+        with col2:
+            if st.button("⏭ Siguiente", type="primary", use_container_width=True):
+                if not texto_objetivo:
+                    st.warning("Escribe una descripción del proyecto")
+                else:
+                    st.session_state.wizard_step = 3
+                    st.rerun()
+
+    # ============ PASO 3: ELEGIR PLANTILLA ============
+    elif st.session_state.wizard_step == 3:
+        st.markdown("### 🎨 Paso 3: Elige una plantilla profesional")
+
+        selected_id = None
+        if st.session_state.plantilla_elegida:
+            selected_id = st.session_state.plantilla_elegida.get("id")
+
+        render_template_gallery(selected_id=selected_id)
+
+        if st.session_state.plantilla_elegida:
+            st.success(f"✅ Plantilla seleccionada: **{st.session_state.plantilla_elegida['nombre']}**")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅ Anterior", use_container_width=True):
+                st.session_state.wizard_step = 2
+                st.rerun()
+        with col2:
+            if not st.session_state.plantilla_elegida:
+                st.info("👆 Selecciona una plantilla para continuar")
+            elif st.button("⏭ Siguiente", type="primary", use_container_width=True):
+                st.session_state.wizard_step = 4
+                st.rerun()
+
+    # ============ PASO 4: FORMATOS ============
+    elif st.session_state.wizard_step == 4:
+        st.markdown("### 📱 Paso 4: Formatos de publicación")
+        st.markdown("Selecciona para qué plataformas quieres exportar tu video.")
+
+        formatos_seleccionados = render_format_selector()
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅ Anterior", use_container_width=True):
+                st.session_state.wizard_step = 3
+                st.rerun()
+        with col2:
+            if not formatos_seleccionados:
+                st.warning("Selecciona al menos un formato")
+            elif st.button("⏭ Siguiente", type="primary", use_container_width=True):
+                st.session_state.formatos_seleccionados = formatos_seleccionados
+                st.session_state.wizard_step = 5
+                st.rerun()
+
+    # ============ PASO 5: GENERAR GUION ============
+    elif st.session_state.wizard_step == 5:
+        st.markdown("### 🧠 Paso 5: Generar guion con IA")
+
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("⬅ Anterior", use_container_width=True):
+                st.session_state.wizard_step = 4
+                st.rerun()
+
+        config = get_config()
+        groq = GroqAI(config.get("groq_api_key", ""),
+                      model=config.get("groq_model", "llama-3.1-70b-versatile"))
+
+        if not groq.esta_configurado():
+            st.markdown("""
+            <div class="custom-alert custom-alert-warning">
+                <strong>⚠ API Key de Groq no configurada</strong>
+                <div style="margin-top: 0.3rem;">
+                    Un administrador debe configurar la API key de Groq.
+                    Puedes obtenerla gratis en <a href="https://console.groq.com" target="_blank">console.groq.com</a>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if st.button("🧠 Generar Guion Profesional", type="primary",
+                     use_container_width=True, disabled=not groq.esta_configurado()):
+            with st.spinner("🎬 Generando guion profesional con IA..."):
+                texto_objetivo = st.session_state.get("texto_objetivo_input", "")
+                tipo = st.session_state.get("tipo_contenido_sel", "Publicitario")
+                duracion = st.session_state.get("duracion_slider", 3)
+                plantilla_nombre = st.session_state.plantilla_elegida.get("nombre", "")
+
+                material_desc = "Material multimedia disponible"
+
+                guion = groq.generar_guion_completo(
+                    texto_objetivo, tipo, duracion, material_desc, plantilla_nombre
+                )
+
+                if "error" in guion:
+                    st.error(f"Error al generar guion: {guion.get('error', 'desconocido')}")
+                    if "raw" in guion:
+                        with st.expander("🔍 Respuesta recibida"):
+                            st.code(guion["raw"])
+                else:
+                    st.session_state.guion = guion
+                    st.success("✅ Guion generado exitosamente")
+                    st.rerun()
+
+        # Mostrar guion generado
+        if st.session_state.guion:
+            st.markdown("---")
+            st.markdown("### 📜 Guion generado")
+            render_guion_visualization(st.session_state.guion)
+
+            # Editor avanzado
+            with st.expander("✏ Editar guion (avanzado)"):
+                guion_json = st.text_area(
+                    "Edita el JSON del guion",
+                    value=json.dumps(st.session_state.guion, indent=2, ensure_ascii=False),
+                    height=300,
+                    key="guion_editor"
+                )
+                if st.button("💾 Guardar cambios del guion"):
+                    try:
+                        st.session_state.guion = json.loads(guion_json)
+                        st.success("Guion actualizado")
+                        st.rerun()
+                    except json.JSONDecodeError as e:
+                        st.error(f"JSON inválido: {e}")
+
+            # Botón siguiente
+            if st.button("⏭ Continuar a producción", type="primary",
+                         use_container_width=True):
+                st.session_state.wizard_step = 6
+                st.rerun()
+
+    # ============ PASO 6: PRODUCIR VIDEO ============
+    elif st.session_state.wizard_step == 6:
+        st.markdown("### 🚀 Paso 6: Producir video")
+
+        # Resumen
+        st.markdown(f"""
+        <div class="glass-card">
+            <h4 style="color: var(--text-primary) !important;">📋 Resumen del proyecto</h4>
+            <ul style="color: var(--text-secondary) !important;">
+                <li><strong>Tipo:</strong> {st.session_state.get('tipo_contenido_sel', 'N/A')}</li>
+                <li><strong>Duración objetivo:</strong> {st.session_state.get('duracion_slider', 3)} minutos</li>
+                <li><strong>Plantilla:</strong> {st.session_state.plantilla_elegida['nombre']}</li>
+                <li><strong>Formatos:</strong> {', '.join(st.session_state.formatos_seleccionados).upper()}</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("⬅ Anterior", use_container_width=True):
+                st.session_state.wizard_step = 5
+                st.rerun()
+        with col2:
+            if st.button("🚀 PRODUCIR VIDEO AHORA", type="primary",
+                         use_container_width=True):
+                # Ejecutar producción
+                _ejecutar_produccion_video()
+
+
+def _ejecutar_produccion_video():
+    """Ejecuta el pipeline completo de producción de video."""
+    from database import UPLOADS
+    import streamlit as st
+
+    # Recuperar archivos guardados en disco en el paso 1
+    archivos_guardados = st.session_state.get("archivos_guardados")
+
+    if not archivos_guardados or not archivos_guardados.get("principal"):
+        st.error("No se encontró el video principal. Vuelve al paso 1 para subir el material.")
+        if st.button("⬅ Volver al paso 1"):
+            st.session_state.wizard_step = 1
+            st.rerun()
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    progress = st.progress(0.0)
+    status = st.empty()
+
+    status.markdown("💾 Preparando archivos...")
+
+    # Usar el video principal guardado
+    ruta_video = archivos_guardados["principal"]
+    video_principal_name = archivos_guardados.get("principal_name", "video.mp4")
+
+    archivos_extra = {
+        "videos": archivos_guardados.get("videos", []),
+        "imagenes": archivos_guardados.get("imagenes", []),
+        "audio": archivos_guardados.get("audio"),
+    }
+
+    # Ejecutar pipeline
+    def progress_callback(p, msg):
+        progress.progress(p)
+        status.markdown(f"⏳ {msg}")
+
+    status.markdown("🎬 Iniciando pipeline de producción...")
+
+    resultado = procesar_video_completo(
+        ruta_video,
+        st.session_state.guion,
+        st.session_state.plantilla_elegida,
+        archivos_extra,
+        st.session_state.formatos_seleccionados,
+        progress_callback
+    )
+
+    if "error" not in resultado:
+        # Descontar token
+        usar_token(st.session_state.usuario["id"])
+        st.session_state.usuario = obtener_usuario(st.session_state.usuario["id"])
+
+        # Guardar proyecto
+        proyecto = {
+            "fecha": timestamp,
+            "video_original": video_principal_name,
+            "video_final": resultado["video_final"],
+            "subtitulos": resultado["subtitulos"],
+            "formatos": resultado["formatos"],
+            "transcripcion": resultado["transcripcion"][:500],
+            "plantilla_usada": st.session_state.plantilla_elegida["nombre"],
+            "tipo_contenido": st.session_state.get("tipo_contenido_sel", ""),
+        }
+        agregar_proyecto(st.session_state.usuario["id"], proyecto)
+        st.session_state.usuario = obtener_usuario(st.session_state.usuario["id"])
+
+        st.balloons()
+        st.markdown("""
+        <div class="custom-alert custom-alert-success">
+            <strong>¡Video producido exitosamente! 🎉</strong>
+            <div style="margin-top: 0.5rem;">
+                Tu video está listo. Puedes reproducirlo y descargarlo en los formatos seleccionados.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mostrar video
+        st.video(resultado["video_final"])
+
+        # Descargas
+        st.markdown("### ⬇ Descargar resultados")
+        cols = st.columns(max(len(resultado["formatos"]) + 1, 1))
+        with cols[0]:
+            if resultado.get("subtitulos"):
+                try:
+                    with open(resultado["subtitulos"], 'rb') as f:
+                        st.download_button(
+                            "📝 Subtítulos SRT",
+                            f,
+                            file_name=f"subtitulos_{timestamp}.srt",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                except (FileNotFoundError, IOError):
+                    pass
+
+        for i, (nombre_fmt, ruta_fmt) in enumerate(resultado["formatos"].items(), 1):
+            with cols[i]:
+                try:
+                    with open(ruta_fmt, 'rb') as f:
+                        st.download_button(
+                            f"🎬 {nombre_fmt.upper()}",
+                            f,
+                            file_name=f"{nombre_fmt}_{timestamp}.mp4",
+                            mime="video/mp4",
+                            use_container_width=True
+                        )
+                except (FileNotFoundError, IOError):
+                    st.error(f"Formato {nombre_fmt} no disponible")
+
+        # Transcripción
+        with st.expander("📝 Ver transcripción completa"):
+            st.write(resultado["transcripcion"])
+
+        # Reset wizard
+        if st.button("🎬 Crear otro video", type="primary"):
+            st.session_state.wizard_step = 1
+            st.session_state.guion = None
+            st.session_state.plantilla_elegida = None
+            st.session_state.archivos_guardados = None
+            st.rerun()
+
+    else:
+        st.markdown(f"""
+        <div class="custom-alert custom-alert-error">
+            <strong>❌ Error en la producción</strong>
+            <div style="margin-top: 0.3rem;">{resultado['error']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("🔄 Reintentar"):
+            st.rerun()
+
+
+def render_templates_page():
+    """Página de galería de plantillas."""
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">🎨 Galería de Plantillas</h2>
+        <p style="color: var(--text-secondary) !important;">
+            12+ plantillas profesionales categorizadas para cada caso de uso.
+            Cada plantilla incluye paleta de colores, tipografía, transiciones y configuración optimizada.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    selected_id = None
+    if st.session_state.plantilla_elegida:
+        selected_id = st.session_state.plantilla_elegida.get("id")
+
+    render_template_gallery(selected_id=selected_id)
+
+    if st.session_state.plantilla_elegida:
+        st.markdown("---")
+        plantilla = st.session_state.plantilla_elegida
+        st.markdown(f"""
+        <div class="glass-card">
+            <h3 style="color: var(--text-primary) !important;">
+                📋 Configuración: {plantilla['nombre']}
+            </h3>
+            <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; overflow: auto;">
+{json.dumps(plantilla, indent=2, ensure_ascii=False)}
+            </pre>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("📤 Usar esta plantilla para producir", type="primary"):
+            st.session_state.vista = "process"
+            st.rerun()
+
+
+def render_projects_page():
+    """Página de proyectos del usuario."""
+    usuario = st.session_state.usuario
+    proyectos = usuario.get("proyectos", [])
+
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">📊 Mis Proyectos</h2>
+        <p style="color: var(--text-secondary) !important;">
+            Gestiona y descarga tus videos producidos.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Stats del usuario
+    stats = [
+        {"icon": "🎬", "value": len(proyectos), "label": "Videos creados"},
+        {"icon": "🪙", "value": usuario.get("tokens", 0), "label": "Tokens restantes"},
+        {"icon": "✅", "value": usuario.get("tokens_usados", 0), "label": "Tokens usados"},
+        {"icon": "📅", "value": usuario.get("plan", "gratis").upper(), "label": "Plan actual"},
+    ]
+    render_stat_grid(stats)
+
+    st.markdown("---")
+
+    if proyectos:
+        st.markdown("### 📜 Historial de proyectos")
+        for i, proyecto in enumerate(reversed(proyectos)):
+            render_project_card(proyecto, i)
+    else:
+        st.markdown("""
+        <div class="glass-card" style="text-align: center; padding: 3rem;">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">📭</div>
+            <h3 style="color: var(--text-primary) !important;">No tienes proyectos aún</h3>
+            <p style="color: var(--text-secondary) !important;">
+                Crea tu primer video profesional con IA en minutos
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("🚀 Crear mi primer video", type="primary"):
+            st.session_state.vista = "process"
+            st.rerun()
+
+
+def render_ideas_page():
+    """Página de generación de ideas con IA."""
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">💡 Generador de Ideas IA</h2>
+        <p style="color: var(--text-secondary) !important;">
+            ¿Sin inspiración? Deja que la IA genere ideas virales para tu nicho.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    config = get_config()
+    groq = GroqAI(config.get("groq_api_key", ""),
+                  model=config.get("groq_model", "llama-3.1-70b-versatile"))
+
+    if not groq.esta_configurado():
+        st.warning("API de Groq no configurada. Contacta al administrador.")
+        return
+
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            nicho = st.text_input("🎯 Tu nicho o industria",
+                                    placeholder="Ej: Marketing digital, Fitness, Cocina, Tecnología...")
+        with col2:
+            publico = st.text_input("👥 Público objetivo",
+                                     placeholder="Ej: Jóvenes 18-30, Padres, Emprendedores...")
+
+        cantidad = st.slider("💡 Número de ideas", 3, 15, 8)
+
+    if st.button("✨ Generar Ideas", type="primary", use_container_width=True):
+        if not nicho:
+            st.warning("Escribe tu nicho para generar ideas")
+            return
+
+        with st.spinner("💡 Generando ideas creativas..."):
+            resultado = groq.generar_ideas_contenido(nicho, publico, cantidad)
+
+            if "error" in resultado:
+                st.error(f"Error: {resultado['error']}")
+            elif "ideas" in resultado:
+                st.markdown(f"### 🎯 {len(resultado['ideas'])} ideas para tu nicho")
+
+                for i, idea in enumerate(resultado["ideas"], 1):
+                    potencial_color = {
+                        "alto": "var(--accent-success)",
+                        "medio": "var(--accent-warning)",
+                        "bajo": "var(--text-muted)"
+                    }.get(idea.get("potencial_viral", "").lower(), "var(--accent-primary)")
+
+                    st.markdown(f"""
+                    <div class="glass-card" style="border-left: 4px solid {potencial_color};">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <h4 style="color: var(--text-primary) !important; margin: 0;">
+                                {i}. {idea.get('titulo', 'Sin título')}
+                            </h4>
+                            <span class="template-tag" style="background: {potencial_color}33;
+                                                                 color: {potencial_color} !important;">
+                                🔥 {idea.get('potencial_viral', 'N/A').upper()}
+                            </span>
+                        </div>
+                        <p style="color: var(--accent-warning) !important; margin: 0.5rem 0;">
+                            🎯 Hook: "{idea.get('gancho', '')}"
+                        </p>
+                        <p style="color: var(--text-secondary) !important; margin: 0.3rem 0;">
+                            {idea.get('descripcion', '')}
+                        </p>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                            <span class="template-tag">📂 {idea.get('tipo', 'N/A')}</span>
+                            <span class="template-tag">⏱ {idea.get('duracion_sugerida', 'N/A')}</span>
+                        </div>
+                        <p style="color: var(--text-muted) !important; font-size: 0.85rem; margin-top: 0.5rem;">
+                            💭 {idea.get('razon', '')}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+
+def render_plans_page():
+    """Página de planes y membresías."""
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">💎 Planes y Membresías</h2>
+        <p style="color: var(--text-secondary) !important;">
+            Elige el plan que mejor se adapte a tus necesidades de producción.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    usuario = st.session_state.usuario
+    render_pricing_section(current_plan=usuario.get("plan", "gratis"))
+
+    st.markdown("---")
+
+    # FAQ
+    st.markdown("### ❓ Preguntas frecuentes")
+    faqs = [
+        ("¿Qué son los tokens?", "Los tokens son créditos que se consumen al procesar cada video. Cada plan incluye un número determinado de tokens mensuales."),
+        ("¿Puedo cambiar de plan?", "Sí, puedes actualizar o downgradear tu plan en cualquier momento desde esta sección."),
+        ("¿Los tokens se acumulan?", "Los tokens no usados en un mes se reinician al inicio del siguiente período de facturación."),
+        ("¿Qué formatos de video puedo exportar?", "Todos los planes permiten exportar a YouTube (16:9), TikTok (9:16) e Instagram (1:1)."),
+        ("¿Necesito instalar algo?", "No, todo funciona en la nube. Solo necesitas un navegador moderno."),
+    ]
+    for pregunta, respuesta in faqs:
+        with st.expander(f"❓ {pregunta}"):
+            st.write(respuesta)
+
+
+def render_config_page():
+    """Página de configuración del usuario."""
+    usuario = st.session_state.usuario
+
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">⚙️ Configuración</h2>
+        <p style="color: var(--text-secondary) !important;">
+          Gestiona tu cuenta y preferencias.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Info de cuenta
+    st.markdown("### 👤 Información de cuenta")
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Nombre", value=usuario.get("nombre", ""), disabled=True)
+            st.text_input("Email", value=usuario.get("email", ""), disabled=True)
+        with col2:
+            st.text_input("Plan actual", value=usuario.get("plan", "").upper(), disabled=True)
+            st.text_input("Tokens disponibles", value=str(usuario.get("tokens", 0)), disabled=True)
+
+    st.markdown("---")
+
+    # Preferencias
+    st.markdown("### 🎨 Preferencias")
+    config_personal = usuario.get("config_personal", {})
+
+    plantilla_fav_id = st.selectbox(
+        "Plantilla favorita por defecto",
+        ["Ninguna"] + [p["id"] for p in PLANTILLAS_PROFESIONALES],
+        format_func=lambda x: "Ninguna" if x == "Ninguna" else next((p["nombre"] for p in PLANTILLAS_PROFESIONALES if p["id"] == x), x)
+    )
+
+    formato_pref = st.selectbox("Formato preferido de salida",
+                                ["youtube", "tiktok", "instagram"],
+                                format_func=lambda x: {"youtube": "YouTube (16:9)",
+                                                       "tiktok": "TikTok (9:16)",
+                                                       "instagram": "Instagram (1:1)"}[x])
+
+    notif = st.checkbox("Recibir notificaciones por email", value=config_personal.get("notificaciones", True))
+
+    if st.button("💾 Guardar preferencias", type="primary"):
+        cambios = {
+            "config_personal": {
+                "plantilla_favorita": None if plantilla_fav_id == "Ninguna" else plantilla_fav_id,
+                "formato_preferido": formato_pref,
+                "notificaciones": notif,
+            }
+        }
+        from database import actualizar_usuario
+        actualizar_usuario(usuario["id"], cambios)
+        st.session_state.usuario = obtener_usuario(usuario["id"])
+        st.success("✅ Preferencias guardadas")
+
+    st.markdown("---")
+
+    # Zona de peligro
+    st.markdown("### ⚠ Zona de peligro")
+    with st.expander("🗑 Cerrar cuenta"):
+        st.warning("Esta acción eliminará todos tus proyectos y datos permanentemente.")
+        confirm = st.checkbox("Entiendo que perderé toda mi información")
+        if st.button("🗑 Eliminar mi cuenta", disabled=not confirm):
+            from database import actualizar_usuario
+            actualizar_usuario(usuario["id"], {"activo": False})
+            logout()
+
+
+def render_admin_page():
+    """Panel de administración."""
+    st.markdown("""
+    <div class="hero-section">
+        <h2 style="color: var(--text-primary) !important;">🔑 Panel de Administración</h2>
+        <p style="color: var(--text-secondary) !important;">
+            Gestiona el sistema, usuarios y configuración global.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    admin_vista = st.sidebar.radio("📍 Secciones",
+                                    ["📊 Dashboard", "👥 Usuarios", "🔑 Configuración IA",
+                                     "🎨 Plantillas", "💰 Membresías", "📈 Estadísticas"])
+
+    db = cargar_db()
+
+    if admin_vista == "📊 Dashboard":
+        data = get_dashboard_data()
+        st.markdown("### 📊 Dashboard general")
+
+        stats = [
+            {"icon": "👥", "value": data["total_usuarios"], "label": "Usuarios totales"},
+            {"icon": "✅", "value": data["usuarios_activos"], "label": "Usuarios activos"},
+            {"icon": "🎬", "value": data["videos_procesados"], "label": "Videos procesados"},
+            {"icon": "🪙", "value": data["tokens_distribuidos"], "label": "Tokens distribuidos"},
+        ]
+        render_stat_grid(stats)
+
+        st.markdown("### 📊 Distribución por planes")
+        for plan_id, count in data["distribucion_planes"].items():
+            plan_nombre = next((m["nombre"] for m in db["membresias"] if m["id"] == plan_id), plan_id)
+            pct = (count / data["total_usuarios"] * 100) if data["total_usuarios"] > 0 else 0
+            st.write(f"**{plan_nombre}**: {count} usuarios ({pct:.1f}%)")
+            st.progress(pct / 100)
+
+    elif admin_vista == "👥 Usuarios":
+        st.markdown("### 👥 Gestión de usuarios")
+        usuarios = listar_usuarios()
+
+        if usuarios:
+            for u in usuarios:
+                with st.expander(f"👤 {u['nombre']} · {u['email']} · Plan: {u['plan'].upper()}"):
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    with col1:
+                        st.write(f"**Tokens disponibles:** {u.get('tokens', 0)}")
+                        st.write(f"**Tokens usados:** {u.get('tokens_usados', 0)}")
+                        st.write(f"**Proyectos:** {len(u.get('proyectos', []))}")
+                        st.write(f"**Estado:** {'✅ Activo' if u.get('activo', True) else '⛔ Suspendido'}")
+                        st.write(f"**Registro:** {u.get('fecha_registro', 'N/A')[:10]}")
+                    with col2:
+                        add_tokens = st.number_input(f"Añadir tokens", 1, 100, 10,
+                                                       key=f"tok_{u['id']}")
+                        if st.button("➕ Añadir", key=f"add_{u['id']}"):
+                            from database import actualizar_usuario
+                            new_tokens = u.get("tokens", 0) + add_tokens
+                            actualizar_usuario(u["id"], {"tokens": new_tokens})
+                            st.success(f"✅ {add_tokens} tokens añadidos")
+                            st.rerun()
+                    with col3:
+                        if u.get("activo", True):
+                            if st.button("⛔ Suspender", key=f"sus_{u['id']}"):
+                                from database import actualizar_usuario
+                                actualizar_usuario(u["id"], {"activo": False})
+                                st.rerun()
+                        else:
+                            if st.button("✅ Activar", key=f"act_{u['id']}"):
+                                from database import actualizar_usuario
+                                actualizar_usuario(u["id"], {"activo": True})
+                                st.rerun()
+        else:
+            st.info("No hay usuarios registrados aún.")
+
+    elif admin_vista == "🔑 Configuración IA":
+        st.markdown("### 🔑 Configuración de IA (Groq)")
+
+        api_key = st.text_input("API Key de Groq",
+                                 value=db["config"].get("groq_api_key", ""),
+                                 type="password",
+                                 help="Obtén tu API key gratuita en https://console.groq.com")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 Guardar API Key", type="primary"):
+                update_config({"groq_api_key": api_key})
+                st.success("✅ API Key guardada")
+        with col2:
+            if st.button("🧪 Probar conexión"):
+                groq = GroqAI(api_key)
+                if groq.esta_configurado():
+                    modelos = groq.listar_modelos()
+                    if modelos:
+                        st.success(f"✅ Conexión exitosa. {len(modelos)} modelos disponibles.")
+                        st.session_state.modelos_groq = modelos
+                    else:
+                        st.error("❌ No se pudieron obtener modelos. Verifica tu API key.")
+                else:
+                    st.error("❌ API key vacía")
+
+        if "modelos_groq" in st.session_state:
+            st.markdown("#### 🤖 Selecciona modelo")
+            modelo_actual = db["config"].get("groq_model", "llama-3.1-70b-versatile")
+            modelo_sel = st.selectbox("Modelo de IA", st.session_state.modelos_groq,
+                                       index=st.session_state.modelos_groq.index(modelo_actual) if modelo_actual in st.session_state.modelos_groq else 0)
+            if st.button("💾 Guardar modelo"):
+                update_config({"groq_model": modelo_sel})
+                st.success(f"✅ Modelo guardado: {modelo_sel}")
+
+        st.markdown("---")
+        st.markdown("### 🔐 Contraseña de Admin")
+        new_pass = st.text_input("Nueva contraseña de admin", type="password")
+        if st.button("💾 Cambiar contraseña admin", type="primary"):
+            if len(new_pass) >= 8:
+                set_admin_password(new_pass)
+                st.success("✅ Contraseña actualizada")
+            else:
+                st.warning("La contraseña debe tener al menos 8 caracteres")
+
+    elif admin_vista == "🎨 Plantillas":
+        st.markdown("### 🎨 Plantillas del sistema")
+        st.write(f"**{len(PLANTILLAS_PROFESIONALES)} plantillas predefinidas**")
+
+        for p in PLANTILLAS_PROFESIONALES:
+            with st.expander(f"🎨 {p['nombre']} - {p['categoria']}"):
+                st.json(p)
+
+    elif admin_vista == "💰 Membresías":
+        st.markdown("### 💰 Configuración de planes")
+        for m in db["membresias"]:
+            with st.expander(f"💎 {m['nombre']} - ${m['precio']}/mes"):
+                st.write(f"**Tokens incluidos:** {m['tokens']}")
+                st.write("**Features:**")
+                for f in m["features"]:
+                    st.write(f"- {f}")
+
+    elif admin_vista == "📈 Estadísticas":
+        st.markdown("### 📈 Estadísticas del sistema")
+        stats = get_stats()
+        st.write(f"**Videos procesados totales:** {stats.get('total_videos_procesados', 0)}")
+        st.write(f"**Fecha de inicio:** {stats.get('fecha_inicio', 'N/A')[:10]}")
+
+        # Mostrar backups disponibles
+        from database import DB_BACKUP_DIR
+        if DB_BACKUP_DIR.exists():
+            backups = list(DB_BACKUP_DIR.glob("sistema_*.json"))
+            st.write(f"**Backups disponibles:** {len(backups)}")
+            if backups:
+                with st.expander("Ver backups"):
+                    for b in sorted(backups, reverse=True)[:10]:
+                        st.write(f"- {b.name}")
+
+
+# ============ SIDEBAR ADMIN ============
+def render_admin_sidebar():
+    """Sidebar del modo admin."""
+    st.sidebar.markdown("""
+    <div class="sidebar-user-card" style="border-left: 4px solid var(--accent-warning);">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div style="font-size: 1.5rem;">🔑</div>
+            <div>
+                <div style="font-weight: 700; color: var(--accent-warning) !important;">MODO ADMIN</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted) !important;">Acceso completo</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.sidebar.button("🚪 Salir de admin", use_container_width=True):
+        st.session_state.admin_mode = False
+        st.rerun()
+
+
+def render_admin_login():
+    """Formulario de login admin."""
+    with st.sidebar.expander("🔐 Acceso Admin", expanded=True):
+        st.markdown("Para acceder al panel de administración, ingresa la contraseña.")
+        admin_pass = st.text_input("Contraseña de admin", type="password", key="admin_pass_input")
+        if st.button("🔑 Entrar como Admin", type="primary", use_container_width=True):
+            if verify_admin_password(admin_pass):
+                st.session_state.admin_mode = True
+                st.success("✅ Modo admin activado")
+                st.rerun()
+            else:
+                st.error("❌ Contraseña incorrecta")
+
+
+# ============ MAIN ============
+def main():
+    """Función principal."""
+
+    # Sidebar
+    with st.sidebar:
+        if is_admin():
+            render_admin_sidebar()
+        elif is_logged_in():
+            render_user_sidebar()
+        else:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem 0;">
+                <h2 style="background: var(--gradient-primary);
+                          -webkit-background-clip: text;
+                          -webkit-text-fill-color: transparent;
+                          background-clip: text;
+                          font-weight: 800;
+                          margin: 0;">🎬 VideoAI</h2>
+                <p style="color: var(--text-muted) !important; font-size: 0.85rem; margin: 0;">
+                    Studio Pro
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("---")
+            st.info("👆 Inicia sesión para empezar a crear videos profesionales con IA")
+
+        # Acceso admin siempre disponible
+        if not is_admin():
+            render_admin_login()
+
+    # Contenido principal
+    if is_admin():
+        render_admin_page()
+    elif is_logged_in():
+        vista = st.session_state.get("vista", "process")
+        if vista == "home":
+            render_home_page()
+        elif vista == "process":
+            render_process_page()
+        elif vista == "templates":
+            render_templates_page()
+        elif vista == "projects":
+            render_projects_page()
+        elif vista == "ideas":
+            render_ideas_page()
+        elif vista == "plans":
+            render_plans_page()
+        elif vista == "config":
+            render_config_page()
+        elif vista == "auth":
+            render_login_form()
+        else:
+            render_process_page()
+    else:
+        # Usuario no logueado - mostrar landing
+        tab_landing = st.tabs(["🏠 Inicio", "🔐 Acceder"])
+
+        with tab_landing[0]:
+            render_home_page()
+
+            st.markdown("---")
+            st.markdown("### 🚀 ¿Listo para empezar?")
+            if st.button("🔐 Iniciar sesión / Crear cuenta", type="primary", use_container_width=True):
+                st.session_state.vista = "auth"
+                st.rerun()
+
+        with tab_landing[1]:
+            render_login_form()
+
+
+if __name__ == "__main__":
+    main()
