@@ -5,6 +5,7 @@ Manejo robusto de max_tokens según el modelo, con auto-detección del límite.
 
 import json
 import re
+import os
 import requests
 from typing import Any, Dict, List, Optional
 
@@ -100,25 +101,21 @@ class GroqAI:
         return min(requested, limite)
 
     def _limpiar_json(self, texto: str) -> str:
-        """Extrae JSON limpio de una respuesta de LLM y repara errores comunes."""
+        """Extrae JSON limpio de una respuesta de LLM."""
         if isinstance(texto, dict):
             return json.dumps(texto)
         if not isinstance(texto, str):
             return str(texto)
 
-        # Remover markdown code fences
         texto = re.sub(r'```json\s*|\s*```', '', texto)
         texto = re.sub(r'```\s*\n?', '', texto)
-
         # Buscar el primer { o [
         starts = [i for i in (texto.find('{'), texto.find('[')) if i != -1]
         if not starts:
             return texto.strip()
         start = min(starts)
-
         # Encontrar el cierre correspondiente
         stack = []
-        end_pos = -1
         for i, ch in enumerate(texto[start:], start):
             if ch in '{[':
                 stack.append(ch)
@@ -126,37 +123,8 @@ class GroqAI:
                 if stack and ((ch == '}' and stack[-1] == '{') or (ch == ']' and stack[-1] == '[')):
                     stack.pop()
                     if not stack:
-                        end_pos = i
-                        break
-
-        if end_pos == -1:
-            return texto[start:].strip()
-
-        json_str = texto[start:end_pos+1]
-
-        # REPARAR ERRORES COMUNES DE JSON
-        # 1. Comas finales antes de } o ] (trailing comma)
-        json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
-
-        # 2. Comas dobles
-        json_str = re.sub(r',\s*,', ',', json_str)
-
-        # 3. Claves sin comillas
-        json_str = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_str)
-
-        # 4. Comillas simples (convertir a dobles)
-        json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)
-
-        # 5. True/False/None con mayúsculas
-        json_str = re.sub(r'\bTrue\b', 'true', json_str)
-        json_str = re.sub(r'\bFalse\b', 'false', json_str)
-        json_str = re.sub(r'\bNone\b', 'null', json_str)
-
-        # 6. Comentarios // (removerlos)
-        json_str = re.sub(r'//[^\n]*', '', json_str)
-        json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
-
-        return json_str.strip()
+                        return texto[start:i+1]
+        return texto[start:].strip()
 
     def _consultar(self, prompt: str, temperature: float = 0.7,
                    max_tokens: int = 3000, system: Optional[str] = None,
@@ -230,28 +198,61 @@ class GroqAI:
 
     def generar_guion_completo(self, texto_objetivo: str, tipo_contenido: str,
                               duracion_minutos: int, material_descripcion: str,
-                              plantilla_nombre: str = "") -> Dict[str, Any]:
+                              plantilla_nombre: str = "",
+                              archivos_extra: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Genera un guion técnico completo con estructura profesional.
+        USA EL MATERIAL DEL USUARIO: videos, imágenes y audio subidos.
         """
         system = """Eres un director de producción audiovisual y guionista profesional.
 Especializado en contenido viral y producción corporativa premium.
 Optimizas storytelling y retención de audiencia.
-Respondes SIEMPRE con JSON válido, sin texto adicional."""
+Respondes SIEMPRE con JSON válido, sin texto adicional.
+CRÍTICO: Debes usar el material que el usuario subió (videos, imágenes, audio).
+NO inventes material que no existe. Si el usuario subió 3 imágenes, úsalas en las escenas."""
 
         # Calcular número de escenas basado en duración (1 escena por ~15 seg)
         num_escenas = max(3, min(8, duracion_minutos * 4))
+
+        # Describir el material disponible en detalle
+        material_detalle = material_descripcion
+        if archivos_extra:
+            videos_extra = archivos_extra.get("videos", [])
+            imagenes = archivos_extra.get("imagenes", [])
+            audio = archivos_extra.get("audio")
+
+            material_detalle += f"""
+
+MATERIAL REAL DISPONIBLE DEL USUARIO (DEBES USARLO):
+"""
+            if videos_extra:
+                material_detalle += f"- {len(videos_extra)} video(s) adicional(es) de B-roll\n"
+                for i, v in enumerate(videos_extra, 1):
+                    material_detalle += f"  * Video B-roll {i}: {os.path.basename(v)}\n"
+
+            if imagenes:
+                material_detalle += f"- {len(imagenes)} imagen(es) para insertar:\n"
+                for i, img in enumerate(imagenes, 1):
+                    material_detalle += f"  * Imagen {i}: {os.path.basename(img)}\n"
+
+            if audio:
+                material_detalle += f"- Audio/música de fondo: {os.path.basename(audio)}\n"
+
+            material_detalle += """
+IMPORTANTE: En el campo "b_roll_sugerido" de cada escena, indica QUÉ material del usuario usar.
+Por ejemplo: "Usar Imagen 1" o "Usar Video B-roll 2" o "Video principal".
+"""
 
         prompt = f"""Crea un guion profesional para un video de {duracion_minutos} minuto(s).
 
 Tipo: {tipo_contenido}
 Objetivo: {texto_objetivo}
-Material: {material_descripcion}
+{material_detalle}
 Plantilla: {plantilla_nombre}
 
 Genera exactamente {num_escenas} escenas.
 
-Devuelve SOLO JSON válido con esta estructura:
+Devuelve SOLO JSON válido (SIN COMAS FINALES antes de }} o ]]) con esta estructura:
 {{
     "titulo": "título atractivo (máx 60 caracteres)",
     "hook": "frase gancho primeros 3 segundos",
@@ -261,9 +262,9 @@ Devuelve SOLO JSON válido con esta estructura:
             "numero": 1,
             "titulo_escena": "nombre corto",
             "descripcion": "qué se ve en pantalla",
-            "narracion": "texto a narrar",
+            "narracion": "texto a narrar (USA EL MATERIAL DEL USUARIO)",
             "texto_en_pantalla": "texto breve a mostrar",
-            "b_roll_sugerido": "qué material usar",
+            "b_roll_sugerido": "INDICA QUÉ MATERIAL USAR: Video principal / Imagen X / Video B-roll X",
             "musica_ambiente": "ambiente sonoro",
             "duracion_seg": 10
         }}
@@ -274,7 +275,10 @@ Devuelve SOLO JSON válido con esta estructura:
 }}
 
 La duración total debe sumar ~{duracion_minutos * 60} segundos.
-Responde SOLO con el JSON, sin markdown ni comentarios."""
+REGLAS CRÍTICAS:
+- NO incluyas comas finales antes de }} o ]])
+- USA el material que el usuario subió, NO inventes material
+- Responde SOLO con el JSON, sin markdown ni comentarios"""
 
         resultado = self._consultar(prompt, temperature=0.7, max_tokens=3000, system=system)
         return self._safe_json(resultado)
@@ -306,25 +310,18 @@ Responde SOLO con JSON válido."""
         return self._safe_json(resultado)
 
     def generar_ideas_contenido(self, nicho: str, publico_objetivo: str,
-                               cantidad: int = 8, estilo_usuario: str = "",
-                               mision: str = "") -> Dict[str, Any]:
-        """
-        Genera ideas de contenido para un nicho específico.
-        Adaptado al estilo y misión del usuario.
-        """
+                               cantidad: int = 8) -> Dict[str, Any]:
+        """Genera ideas de contenido para un nicho específico."""
         # Limitar cantidad para no exceder max_tokens
         cantidad = min(cantidad, 10)
 
         prompt = f"""Genera {cantidad} ideas de contenido viral para video.
 
 Nicho: {nicho}
-Público objetivo: {publico_objetivo}
-Estilo del usuario: {estilo_usuario or "No especificado, asesorar"}
-Misión del usuario: {mision or "Crear contenido atractivo y profesional"}
+Público: {publico_objetivo}
 
-Devuelve SOLO JSON válido con esta estructura exacta (sin comas finales, sin comentarios):
+Devuelve SOLO JSON con esta estructura exacta:
 {{
-    "diagnostico_estilo": "análisis del estilo del usuario y recomendaciones",
     "ideas": [
         {{
             "titulo": "título atractivo",
@@ -333,47 +330,16 @@ Devuelve SOLO JSON válido con esta estructura exacta (sin comas finales, sin co
             "tipo": "tutorial/review/educativo/entretenimiento",
             "duracion_sugerida": "1-2 minutos",
             "potencial_viral": "alto/medio/bajo",
-            "razon": "por qué tiene potencial",
-            "adaptado_a_estilo": "cómo se adapta al estilo del usuario"
+            "razon": "por qué tiene potencial"
         }}
     ]
 }}
 
 Genera EXACTAMENTE {cantidad} ideas.
-REGLAS CRÍTICAS:
-- No incluyas comas finales antes de }} o ]]
-- No incluyas comentarios
-- Usa comillas dobles para todas las claves y valores
-- Responde SOLO con JSON, sin markdown ni texto adicional"""
+Responde SOLO con JSON, sin markdown."""
 
         resultado = self._consultar(prompt, temperature=0.8, max_tokens=2500)
-        parsed = self._safe_json(resultado)
-
-        # Si falló el parseo, intentar una versión simplificada
-        if "error" in parsed and "raw" in parsed:
-            # Intentar reparar manualmente
-            raw = parsed["raw"]
-            # Último intento: extraer ideas con regex
-            ideas = re.findall(r'"titulo"\s*:\s*"([^"]+)"', raw)
-            if ideas:
-                return {
-                    "diagnostico_estilo": "Análisis automático",
-                    "ideas": [
-                        {
-                            "titulo": titulo,
-                            "gancho": f"Descubre: {titulo}",
-                            "descripcion": "Idea generada por IA",
-                            "tipo": "general",
-                            "duracion_sugerida": "1-2 minutos",
-                            "potencial_viral": "medio",
-                            "razon": "Tema relevante para el nicho",
-                            "adaptado_a_estilo": "Adaptable al estilo del usuario"
-                        }
-                        for titulo in ideas[:cantidad]
-                    ]
-                }
-
-        return parsed
+        return self._safe_json(resultado)
 
     def mejorar_guion(self, guion_actual: str, instrucciones: str = "") -> str:
         """Mejora un guion existente según instrucciones."""
@@ -425,175 +391,6 @@ Devuelve SOLO JSON:
 Responde SOLO con JSON."""
 
         resultado = self._consultar(prompt, temperature=0.3, max_tokens=1500)
-        return self._safe_json(resultado)
-
-    # ============ ANÁLISIS DE EFECTIVIDAD Y COMENTARIOS ============
-
-    def analizar_efectividad_posteos(self, posteos: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Analiza la efectividad de los posteos del usuario.
-        posteos: lista de dicts con métricas (likes, comments, shares, views, etc.)
-        """
-        # Limitar a los 20 más recientes
-        posteos_str = json.dumps(posteos[:20], ensure_ascii=False, default=str)
-
-        prompt = f"""Analiza la efectividad de estos posteos en redes sociales:
-
-{posteos_str}
-
-Devuelve SOLO JSON válido (sin comas finales):
-{{
-    "resumen_general": "análisis del rendimiento general",
-    "mejor_posteo": "descripción del posteo más exitoso y por qué",
-    "peor_posteo": "descripción del posteo menos exitoso y por qué",
-    "patrones_exitosos": ["patrón 1", "patrón 2", "patrón 3"],
-    "patrones_fallidos": ["patrón 1", "patrón 2"],
-    "recomendacion_estrategia": "insistir en estrategia actual o cambiar",
-    "razon_recomendacion": "por qué se recomienda esta estrategia",
-    "horario_optimo": "horario recomendado para publicar",
-    "tipo_contenido_recomendado": "tipo de contenido a priorizar",
-    "metricas_clave": {{
-        "engagement_promedio": "X%",
-        "crecimiento_seguidores": "X%",
-        "mejor_dia": "día de la semana",
-        "mejor_horario": "hora del día"
-    }}
-}}
-
-REGLAS:
-- Sin comas finales antes de }} o ]]
-- Solo JSON válido
-- Sin markdown"""
-
-        resultado = self._consultar(prompt, temperature=0.4, max_tokens=2000)
-        return self._safe_json(resultado)
-
-    def analizar_comentarios(self, comentarios: List[str]) -> Dict[str, Any]:
-        """
-        Lee comentarios y extrae ideas importantes, reconoce críticas reales
-        y fallos en el sistema o lenguaje usado por el usuario.
-        """
-        comentarios_texto = "\n".join([f"- {c}" for c in comentarios[:50]])
-
-        prompt = f"""Analiza estos comentarios de seguidores:
-
-{comentarios_texto}
-
-Extrae información valiosa. Devuelve SOLO JSON válido (sin comas finales):
-{{
-    "ideas_importantes": [
-        "idea 1 extraída de los comentarios",
-        "idea 2 extraída de los comentarios"
-    ],
-    "criticas_reales": [
-        "crítica 1 con detalle",
-        "crítica 2 con detalle"
-    ],
-    "fallos_detectados": [
-        "fallo 1 en el contenido o comunicación",
-        "fallo 2 en el contenido o comunicación"
-    ],
-    "sentimiento_general": "positivo/negativo/neutro/mixto",
-    "temas_recurrentes": ["tema 1", "tema 2"],
-    "sugerencias_mejora": [
-        "sugerencia 1 concreta",
-        "sugerencia 2 concreta"
-    ],
-    "oportunidades_contenido": [
-        "oportunidad 1 basada en comentarios",
-        "oportunidad 2 basada en comentarios"
-    ],
-    "alertas_urgentes": [
-        "alerta 1 si hay algo urgente",
-        "alerta 2 si hay algo urgente"
-    ]
-}}
-
-REGLAS:
-- Sin comas finales antes de }} o ]]
-- Solo JSON válido
-- Sin markdown"""
-
-        resultado = self._consultar(prompt, temperature=0.5, max_tokens=2000)
-        return self._safe_json(resultado)
-
-    def analizar_creaciones_y_proponer(self, creaciones: List[Dict[str, Any]],
-                                       narrativa_usuario: str = "") -> Dict[str, Any]:
-        """
-        Analiza las creaciones del usuario y propone piezas que contribuyan a su relato.
-        creaciones: lista de videos/proyectos creados
-        narrativa_usuario: relato/misión del usuario
-        """
-        creaciones_str = json.dumps(creaciones[:10], ensure_ascii=False, default=str)
-
-        prompt = f"""Analiza estas creaciones del usuario y propón nuevas piezas:
-
-Creaciones previas:
-{creaciones_str}
-
-Relato/Misión del usuario:
-{narrativa_usuario or "Crear contenido profesional y atractivo"}
-
-Devuelve SOLO JSON válido (sin comas finales):
-{{
-    "analisis_creaciones": "análisis del estilo y temática de las creaciones",
-    "coherencia_narrativa": "evaluación de coherencia con el relato del usuario",
-    "fortalezas": ["fortaleza 1", "fortaleza 2"],
-    "areas_mejora": ["área 1", "área 2"],
-    "propuestas_piezas": [
-        {{
-            "titulo": "título de la pieza propuesta",
-            "descripcion": "de qué tratará",
-            "tipo": "video/carrusel/reel/stories",
-            "objetivo": "qué busca lograr con esta pieza",
-            "conexion_relato": "cómo contribuye al relato del usuario",
-            "prioridad": "alta/media/baja"
-        }}
-    ],
-    "estrategia_contenido": "estrategia general recomendada",
-    "proximos_pasos": ["paso 1", "paso 2", "paso 3"]
-}}
-
-REGLAS:
-- Sin comas finales antes de }} o ]]
-- Solo JSON válido
-- Sin markdown"""
-
-        resultado = self._consultar(prompt, temperature=0.7, max_tokens=2500)
-        return self._safe_json(resultado)
-
-    def generar_contenido_post_social(self, video_titulo: str, descripcion: str,
-                                       plataforma: str = "instagram") -> Dict[str, Any]:
-        """
-        Genera contenido escrito optimizado por SEO para acompañar al video.
-        plataforma: instagram, facebook, twitter, linkedin, tiktok
-        """
-        prompt = f"""Genera contenido escrito optimizado por SEO para acompañar un video.
-
-Título del video: {video_titulo}
-Descripción: {descripcion}
-Plataforma: {plataforma}
-
-Devuelve SOLO JSON válido (sin comas finales):
-{{
-    "caption": "caption principal optimizado para {plataforma}",
-    "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"],
-    "call_to_action": "CTA claro y directo",
-    "descripcion_seo": "descripción optimizada para buscadores",
-    "titulo_seo": "título SEO (máx 60 caracteres)",
-    "meta_descripcion": "meta descripción (máx 155 caracteres)",
-    "keywords": ["keyword1", "keyword2"],
-    "emoji_recomendados": ["emoji1", "emoji2"],
-    "mejor_horario": "horario recomendado para publicar",
-    "texto_alternativo": "alt text para accesibilidad"
-}}
-
-REGLAS:
-- Sin comas finales antes de }} o ]]
-- Solo JSON válido
-- Sin markdown"""
-
-        resultado = self._consultar(prompt, temperature=0.6, max_tokens=1500)
         return self._safe_json(resultado)
 
     def test_conexion(self) -> Dict[str, Any]:

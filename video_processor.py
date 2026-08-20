@@ -500,7 +500,7 @@ def unir_clips_con_transiciones(clips: List[str],
                                 duracion_transicion: float = 0.5) -> str:
     """
     Une clips aplicando transiciones suaves entre ellos.
-    Transiciones: fade, slide, zoom, wipe, smooth
+    Optimizado: usa resolución del clip más pequeño para velocidad.
     """
     if not clips:
         return ""
@@ -509,20 +509,40 @@ def unir_clips_con_transiciones(clips: List[str],
 
     output_path = TEMP_DIR / f"merged_{uuid.uuid4().hex}.mp4"
 
+    # Detectar resolución del primer clip válido para usar como referencia
+    target_w, target_h = 1920, 1080  # default
+    for clip in clips:
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "csv=p=0", clip
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+            if result.stdout.strip():
+                dims = result.stdout.strip().split(',')
+                w, h = int(dims[0]), int(dims[1])
+                # Usar la resolución más pequeña encontrada para velocidad
+                if w < target_w:
+                    target_w, target_h = w, h
+                break
+        except Exception:
+            pass
+
     # Normalizar todos los clips: misma resolución, fps, codec, audio
+    # Usar preset=ultrafast para velocidad
     normalized_clips = []
     for i, clip in enumerate(clips):
         norm_path = TEMP_DIR / f"norm_{i}_{uuid.uuid4().hex}.mp4"
         norm_cmd = [
             "ffmpeg", "-y", "-i", clip,
-            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,fps=30",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
             "-t", str(_get_video_duration(clip) or 10),  # Limitar duración
             str(norm_path)
         ]
-        if _run_ffmpeg(norm_cmd)[0]:
+        if _run_ffmpeg(norm_cmd, output_file=str(norm_path))[0]:
             normalized_clips.append(str(norm_path))
         else:
             # Si falla, usar el original
@@ -546,7 +566,7 @@ def unir_clips_con_transiciones(clips: List[str],
             "-c", "copy",
             str(output_path)
         ]
-        if _run_ffmpeg(cmd_concat)[0]:
+        if _run_ffmpeg(cmd_concat, output_file=str(output_path))[0]:
             return str(output_path)
         # Si falla, retornar el primer clip
         return normalized_clips[0]
@@ -688,43 +708,49 @@ def quemar_subtitulos(video_path: str, ruta_srt: str,
 
 
 def exportar_multi_formato(video_path: str) -> Dict[str, str]:
-    """Exporta el video en formatos para YouTube, TikTok e Instagram."""
+    """
+    Exporta el video en formatos para YouTube, TikTok e Instagram.
+    Calidad profesional: CRF 18, preset fast, 1080p.
+    """
     formatos = {}
 
     # YouTube 16:9 (1920x1080)
     yt_path = OUTPUTS / f"youtube_{uuid.uuid4().hex}.mp4"
     cmd_yt = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         str(yt_path)
     ]
-    if _run_ffmpeg(cmd_yt)[0]:
+    if _run_ffmpeg(cmd_yt, output_file=str(yt_path))[0]:
         formatos["youtube"] = str(yt_path)
 
     # TikTok 9:16 (1080x1920)
     tk_path = OUTPUTS / f"tiktok_{uuid.uuid4().hex}.mp4"
     cmd_tk = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         str(tk_path)
     ]
-    if _run_ffmpeg(cmd_tk)[0]:
+    if _run_ffmpeg(cmd_tk, output_file=str(tk_path))[0]:
         formatos["tiktok"] = str(tk_path)
 
     # Instagram 1:1 (1080x1080)
     ig_path = OUTPUTS / f"instagram_{uuid.uuid4().hex}.mp4"
     cmd_ig = [
         "ffmpeg", "-y", "-i", video_path,
-        "-vf", "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+        "-vf", "scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
         "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         str(ig_path)
     ]
-    if _run_ffmpeg(cmd_ig)[0]:
+    if _run_ffmpeg(cmd_ig, output_file=str(ig_path))[0]:
         formatos["instagram"] = str(ig_path)
 
     return formatos
@@ -734,100 +760,219 @@ def procesar_video_completo(ruta_video: str, guion: Dict[str, Any],
                             plantilla: Dict[str, Any],
                             archivos_extra: Dict[str, Any],
                             formatos_seleccionados: List[str] = None,
-                            progress_callback=None) -> Dict[str, Any]:
+                            progress_callback=None,
+                            efectos_seleccionados: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Pipeline completo de procesamiento de video.
+    USA EL MATERIAL DEL USUARIO: videos, imágenes y audio subidos.
+    Aplica: intro, B-roll intercalado, transiciones, color grading, efectos, audio ducking, subtítulos.
+    Exporta a múltiples formatos con calidad profesional.
     """
+    temp_dir = TEMP_DIR / f"project_{uuid.uuid4().hex}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        if progress_callback:
-            progress_callback(0.05, "Iniciando transcripción con Whisper...")
+        # ============ FASE 1: TRANSCRIPCIÓN (opcional) ============
+        transcripcion = {"text": "", "segments": []}
+        try:
+            if progress_callback:
+                progress_callback(0.05, "Iniciando transcripción con Whisper...")
 
-        # Transcripción con Whisper
-        import whisper
-        whisper_model = plantilla.get("config_avanzada", {}).get("whisper_model", "base")
-        modelo = whisper.load_model(whisper_model)
-        transcripcion = modelo.transcribe(ruta_video, fp16=False)
+            import whisper
+            whisper_model = plantilla.get("config_avanzada", {}).get("whisper_model", "base")
+            modelo = whisper.load_model(whisper_model)
+            transcripcion = modelo.transcribe(ruta_video, fp16=False)
 
+            if progress_callback:
+                progress_callback(0.15, "Transcripción completada.")
+        except ImportError:
+            if progress_callback:
+                progress_callback(0.15, "Whisper no disponible, continuando sin transcripción...")
+        except Exception as e:
+            if progress_callback:
+                progress_callback(0.15, f"Transcripción omitida: {str(e)[:50]}")
+
+        # ============ FASE 2: CORTAR SEGMENTOS ÚTILES DEL VIDEO ============
         if progress_callback:
-            progress_callback(0.15, "Transcripción completada. Detectando silencios...")
+            progress_callback(0.25, "Procesando video principal...")
 
         # Detectar silencios para cortar muerto
-        silencios = detectar_silencios(ruta_video)
+        try:
+            silencios = detectar_silencios(ruta_video)
+        except Exception:
+            silencios = []
 
-        if progress_callback:
-            progress_callback(0.25, "Cortando segmentos útiles...")
+        # Normalizar el video principal - usar resolución del video original o 1280x720 máx
+        # para evitar lentitud con videos pequeños escalados a 1920x1080
+        try:
+            dur_orig = _get_video_duration(ruta_video)
+        except Exception:
+            dur_orig = 0
 
-        # Cortar segmentos útiles del video principal
-        temp_dir = TEMP_DIR / f"project_{uuid.uuid4().hex}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Determinar resolución objetivo basada en el video original
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "csv=p=0", ruta_video
+            ]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            dims = probe_result.stdout.strip().split(',')
+            orig_w, orig_h = int(dims[0]), int(dims[1])
+            # Si el video original es menor a 1280x720, usar su resolución
+            if orig_w < 1280 or orig_h < 720:
+                target_w, target_h = orig_w, orig_h
+            else:
+                target_w, target_h = 1920, 1080
+        except Exception:
+            target_w, target_h = 1920, 1080
 
-        segmentos = []
-        inicio = 0.0
-        for i, (s_ini, s_fin) in enumerate(silencios):
-            if s_ini - inicio >= 2:  # Solo segmentos > 2s
-                seg = temp_dir / f"seg_{i:03d}.mp4"
-                cmd = [
-                    "ffmpeg", "-y", "-ss", str(inicio), "-i", ruta_video,
-                    "-t", str(s_ini - inicio),
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                    "-c:a", "aac",
-                    str(seg)
-                ]
-                if _run_ffmpeg(cmd)[0]:
-                    segmentos.append(str(seg))
-            inicio = s_fin
-
-        # Último segmento
-        seg_final = temp_dir / "seg_final.mp4"
-        cmd = [
-            "ffmpeg", "-y", "-ss", str(inicio), "-i", ruta_video,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-            "-c:a", "aac",
-            str(seg_final)
+        video_normalizado = temp_dir / "main_normalized.mp4"
+        cmd_norm = [
+            "ffmpeg", "-y", "-i", ruta_video,
+            "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+            str(video_normalizado)
         ]
-        if _run_ffmpeg(cmd)[0]:
-            segmentos.append(str(seg_final))
+        norm_success = _run_ffmpeg(cmd_norm, output_file=str(video_normalizado))[0]
+        video_principal_procesado = str(video_normalizado) if norm_success else ruta_video
+
+        # Cortar segmentos útiles (sin silencios largos)
+        segmentos = []
+        if silencios:
+            inicio = 0.0
+            for i, (s_ini, s_fin) in enumerate(silencios):
+                if s_ini - inicio >= 2:  # Solo segmentos > 2s
+                    seg = temp_dir / f"seg_{i:03d}.mp4"
+                    cmd = [
+                        "ffmpeg", "-y", "-ss", str(inicio), "-i", video_principal_procesado,
+                        "-t", str(s_ini - inicio),
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                        "-c:a", "aac", "-b:a", "192k",
+                        "-pix_fmt", "yuv420p",
+                        str(seg)
+                    ]
+                    if _run_ffmpeg(cmd, output_file=str(seg))[0]:
+                        segmentos.append(str(seg))
+                inicio = s_fin
+
+            # Último segmento
+            seg_final = temp_dir / "seg_final.mp4"
+            cmd = [
+                "ffmpeg", "-y", "-ss", str(inicio), "-i", video_principal_procesado,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p",
+                str(seg_final)
+            ]
+            if _run_ffmpeg(cmd, output_file=str(seg_final))[0]:
+                segmentos.append(str(seg_final))
+        else:
+            # Sin silencios detectados, usar video completo
+            segmentos = [video_principal_procesado]
 
         if progress_callback:
-            progress_callback(0.40, "Creando intro profesional...")
+            progress_callback(0.35, f"Procesados {len(segmentos)} segmentos de video.")
 
-        # Construir lista final de clips
+        # ============ FASE 3: CREAR INTRO Y OUTRO ============
+        if progress_callback:
+            progress_callback(0.45, "Creando intro profesional...")
+
+        intro_path = None
+        outro_path = None
+
+        if guion and guion.get("titulo"):
+            try:
+                intro_path = crear_intro_profesional(
+                    guion["titulo"], plantilla,
+                    duracion=plantilla.get("config_avanzada", {}).get("intro_duracion", 4)
+                )
+            except Exception:
+                intro_path = None
+
+        if guion and guion.get("cta_final"):
+            try:
+                outro_path = crear_outro_profesional(
+                    plantilla, guion["cta_final"],
+                    duracion=plantilla.get("config_avanzada", {}).get("outro_duracion", 3)
+                )
+            except Exception:
+                outro_path = None
+
+        # ============ FASE 4: CREAR DIAPOSITIVAS DE IMÁGENES ============
+        if progress_callback:
+            progress_callback(0.55, "Procesando imágenes de B-roll...")
+
+        imagenes_slides = []
+        if archivos_extra.get("imagenes"):
+            for i, img_path in enumerate(archivos_extra["imagenes"]):
+                try:
+                    slide = crear_diapositiva_imagen(
+                        img_path,
+                        duracion=3,
+                        resolucion="1920x1080",
+                        ken_burns=True
+                    )
+                    if os.path.exists(slide) and os.path.getsize(slide) > 0:
+                        imagenes_slides.append(slide)
+                except Exception:
+                    pass
+
+        # ============ FASE 5: NORMALIZAR VIDEOS EXTRA ============
+        videos_extra_norm = []
+        if archivos_extra.get("videos"):
+            for i, v_path in enumerate(archivos_extra["videos"]):
+                v_norm = temp_dir / f"extra_{i:03d}.mp4"
+                cmd_v = [
+                    "ffmpeg", "-y", "-i", v_path,
+                    "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                    "-shortest",
+                    str(v_norm)
+                ]
+                if _run_ffmpeg(cmd_v, output_file=str(v_norm))[0]:
+                    videos_extra_norm.append(str(v_norm))
+
+        # ============ FASE 6: INTERCALAR MATERIAL (VIDEO + IMÁGENES) ============
+        if progress_callback:
+            progress_callback(0.65, "Intercalando material audiovisual...")
+
         clips_finales = []
 
         # 1. Intro
-        if guion and "titulo" in guion:
-            intro = crear_intro_profesional(
-                guion["titulo"], plantilla,
-                duracion=plantilla.get("config_avanzada", {}).get("intro_duracion", 4)
-            )
-            clips_finales.append(intro)
+        if intro_path and os.path.exists(intro_path):
+            clips_finales.append(intro_path)
 
-        # 2. Imágenes como B-roll intercalado
-        if archivos_extra.get("imagenes"):
-            for img_path in archivos_extra["imagenes"]:
-                slide = crear_diapositiva_imagen(img_path, duracion=3, ken_burns=True)
-                clips_finales.append(slide)
+        # 2. Intercalar segmentos de video con imágenes (B-roll)
+        # En lugar de poner todas las imágenes juntas, intercalarlas entre segmentos
+        num_segmentos = len(segmentos)
+        num_imagenes = len(imagenes_slides)
 
-        # 3. Segmentos del video principal
-        clips_finales.extend(segmentos)
+        if num_imagenes > 0 and num_segmentos > 0:
+            # Distribuir imágenes entre segmentos
+            for i, seg in enumerate(segmentos):
+                clips_finales.append(seg)
+                # Insertar una imagen después de cada N segmentos
+                img_idx = i % num_imagenes
+                if i < num_imagenes:  # Solo insertar tantas imágenes como tengamos
+                    clips_finales.append(imagenes_slides[img_idx])
+        else:
+            # Sin imágenes, solo segmentos
+            clips_finales.extend(segmentos)
+            clips_finales.extend(imagenes_slides)
 
-        # 4. Videos extra
-        if archivos_extra.get("videos"):
-            for v_path in archivos_extra["videos"]:
-                clips_finales.append(v_path)
+        # 3. Videos extra al final
+        clips_finales.extend(videos_extra_norm)
 
-        # 5. Outro
-        if guion and "cta_final" in guion:
-            outro = crear_outro_profesional(
-                plantilla, guion["cta_final"],
-                duracion=plantilla.get("config_avanzada", {}).get("outro_duracion", 3)
-            )
-            clips_finales.append(outro)
+        # 4. Outro
+        if outro_path and os.path.exists(outro_path):
+            clips_finales.append(outro_path)
 
+        # ============ FASE 7: UNIR CLIPS CON TRANSICIONES ============
         if progress_callback:
-            progress_callback(0.60, "Uniendo clips con transiciones...")
+            progress_callback(0.75, "Uniendo clips con transiciones...")
 
-        # Unir con transiciones
         tipo_transicion = plantilla.get("transicion", "fade")
         dur_transicion = plantilla.get("duracion_transicion", 0.5)
 
@@ -835,20 +980,57 @@ def procesar_video_completo(ruta_video: str, guion: Dict[str, Any],
             video_base = unir_clips_con_transiciones(
                 clips_finales, tipo_transicion, dur_transicion
             )
+        elif clips_finales:
+            video_base = clips_finales[0]
         else:
-            video_base = clips_finales[0] if clips_finales else ruta_video
+            video_base = video_principal_procesado
 
+        # ============ FASE 8: COLOR GRADING ============
         if progress_callback:
-            progress_callback(0.70, "Aplicando color grading...")
+            progress_callback(0.80, "Aplicando color grading profesional...")
 
-        # Color grading
         preset_grading = plantilla.get("config_avanzada", {}).get("color_grading", "neutro")
         video_base = aplicar_color_grading(video_base, preset_grading)
 
-        if progress_callback:
-            progress_callback(0.80, "Procesando audio...")
+        # ============ FASE 9: APLICAR FILTROS DE VIDEO Y AUDIO ============
+        if efectos_seleccionados and progress_callback:
+            efectos_video = [e for e in efectos_seleccionados if e.get("tipo", "video") == "video"]
+            efectos_audio = [e for e in efectos_seleccionados if e.get("tipo") == "audio"]
+            total = len(efectos_video) + len(efectos_audio)
+            progress_callback(0.85, f"Aplicando {total} filtros ({len(efectos_video)} video, {len(efectos_audio)} audio)...")
 
-        # Audio ducking con música
+        # Aplicar filtros de video
+        if efectos_seleccionados:
+            for efecto in efectos_seleccionados:
+                efecto_id = efecto.get("id", "ninguno")
+                intensidad = efecto.get("intensidad", 0.5)
+                tipo = efecto.get("tipo", "video")
+                if efecto_id != "ninguno":
+                    if tipo == "audio":
+                        # Los filtros de audio se aplican con -af (audio filter) en lugar de -vf
+                        from templates_data import get_efecto_by_id
+                        efecto_data = get_efecto_by_id(efecto_id)
+                        if efecto_data and efecto_data.get("filtro_ffmpeg"):
+                            audio_filter = efecto_data["filtro_ffmpeg"]
+                            output_audio = TEMP_DIR / f"audio_fx_{efecto_id}_{uuid.uuid4().hex}.mp4"
+                            cmd_audio = [
+                                "ffmpeg", "-y", "-i", video_base,
+                                "-af", audio_filter,
+                                "-c:v", "copy",
+                                "-c:a", "aac", "-b:a", "192k",
+                                str(output_audio)
+                            ]
+                            success, _ = _run_ffmpeg(cmd_audio, output_file=str(output_audio))
+                            if success and os.path.exists(str(output_audio)):
+                                video_base = str(output_audio)
+                    else:
+                        # Filtros de video con -vf
+                        video_base = aplicar_efectos_visuales(video_base, efecto_id, intensidad)
+
+        # ============ FASE 10: AUDIO DUCKING ============
+        if progress_callback:
+            progress_callback(0.88, "Procesando audio...")
+
         if archivos_extra.get("audio"):
             musica_vol = plantilla.get("config_avanzada", {}).get("musica_volumen", 0.15)
             voz_vol = plantilla.get("config_avanzada", {}).get("voz_volumen", 1.0)
@@ -856,19 +1038,23 @@ def procesar_video_completo(ruta_video: str, guion: Dict[str, Any],
                 video_base, archivos_extra["audio"], voz_vol, musica_vol
             )
 
+        # ============ FASE 11: SUBTÍTULOS ============
         if progress_callback:
-            progress_callback(0.85, "Generando subtítulos...")
+            progress_callback(0.92, "Generando subtítulos...")
 
-        # Subtítulos
         ruta_srt = None
-        if transcripcion and "segments" in transcripcion:
-            ruta_srt = generar_subtitulos_srt(transcripcion)
-            video_base = quemar_subtitulos(video_base, ruta_srt, plantilla)
+        if transcripcion and transcripcion.get("segments"):
+            try:
+                ruta_srt = generar_subtitulos_srt(transcripcion)
+                if ruta_srt:
+                    video_base = quemar_subtitulos(video_base, ruta_srt, plantilla)
+            except Exception:
+                pass
 
+        # ============ FASE 12: EXPORTAR A MÚLTIPLES FORMATOS ============
         if progress_callback:
             progress_callback(0.95, "Exportando a múltiples formatos...")
 
-        # Exportar formatos
         formatos_seleccionados = formatos_seleccionados or ["youtube", "tiktok", "instagram"]
         todos_formatos = exportar_multi_formato(video_base)
         formatos_filtrados = {
