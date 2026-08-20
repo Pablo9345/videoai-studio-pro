@@ -60,7 +60,8 @@ init_session_state()
 
 
 def render_home_page():
-    """Página de inicio atractiva."""
+    """Página de inicio. Orden: Hero → Funcionalidades → Botón → Stats al final."""
+    # ============ HERO ============
     st.markdown("""
     <div class="hero-section">
         <div class="hero-title">VideoAI Studio Pro</div>
@@ -69,9 +70,8 @@ def render_home_page():
             Guiones inteligentes, plantillas premium y exportación multi-formato.
         </div>
         <div class="hero-badges">
-            <span class="hero-badge hero-badge-accent">✨ 12+ Plantillas Pro</span>
+            <span class="hero-badge hero-badge-accent">✨ 20 Plantillas Pro</span>
             <span class="hero-badge">🎬 Multi-formato (YT, TT, IG)</span>
-            <span class="hero-badge">🤖 IA Groq Llama 3.1</span>
             <span class="hero-badge">📝 Subtítulos Automáticos</span>
             <span class="hero-badge">🎨 Color Grading</span>
             <span class="hero-badge">🎵 Audio Ducking</span>
@@ -79,58 +79,108 @@ def render_home_page():
     </div>
     """, unsafe_allow_html=True)
 
-    # Stats de la plataforma
-    st.markdown("### 📊 Potencia de la plataforma")
-    stats = [
-        {"icon": "🎬", "value": "12+", "label": "Plantillas Pro"},
-        {"icon": "⚡", "value": "< 5 min", "label": "Tiempo promedio"},
-        {"icon": "📱", "value": "3", "label": "Formatos simultáneos"},
-        {"icon": "🤖", "value": "100%", "label": "Automatizado por IA"},
-    ]
-    render_stat_grid(stats)
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 1rem;">
+        <p style="color: var(--accent-tertiary) !important; font-style: italic; font-size: 1rem;">
+            "La creación de videos profesionales nunca fue tan fácil y entretenida"
+        </p>
+        <p style="color: var(--text-muted) !important; font-size: 0.85rem;">
+            Desarrollado por <strong style="color: var(--accent-primary) !important;">Comunicaciones Integrales</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown("---")
-
-    # Features
+    # ============ FUNCIONALIDADES (sobre Potencia) ============
     st.markdown("### 🚀 Funcionalidades profesionales")
+    st.markdown("Haz clic en cada funcionalidad para conocer más detalles.")
+
     features = [
-        ("🧠", "Guion IA", "Generación automática de guiones con hook, escenas estructuradas y CTA optimizado"),
-        ("🎨", "12+ Plantillas", "Plantillas categorizadas para cada caso: Marketing, Tech, Educativo, Vlog, etc."),
-        ("🎬", "Edición Pro", "Transiciones cinematográficas, efectos Ken Burns e intros animadas"),
-        ("🎨", "Color Grading", "Presets de color: cinemático, cálido, frío, vibrante y neutro"),
-        ("🎵", "Audio Ducking", "Mezcla inteligente: la música baja automáticamente cuando hay voz"),
-        ("📝", "Subtítulos Auto", "Transcripción con Whisper y subtítulos quemados con estilo personalizable"),
-        ("📱", "Multi-Formato", "Exporta a YouTube (16:9), TikTok (9:16) e Instagram (1:1) simultáneamente"),
-        ("🤖", "Metadata IA", "Títulos SEO, hashtags, descripciones y conceptos de miniatura generados por IA"),
+        ("🧠", "Guion IA", "Generación automática de guiones",
+         "**¿Qué hace?** Genera guiones técnicos completos con IA: hook, escenas con B-roll, CTA y hashtags.\n\n**Importancia:** Un guion estructurado aumenta la retención hasta 80%.\n\n**Capacidades:**\n- Análisis del objetivo\n- B-roll sugerido\n- Hashtags optimizados\n- Descripción lista para publicar"),
+        ("🎨", "20 Plantillas Pro", "Diseños categorizados",
+         "**¿Qué hace?** 20 plantillas en 15 categorías: Gaming, Belleza, Gastronomía, Noticias, Premium y más.\n\n**Importancia:** Consistencia visual de marca y ahorro de horas de diseño.\n\n**Capacidades:**\n- Preview animado en vivo\n- Guardar plantillas personalizadas\n- Logo en posición configurable\n- Marcar como corporativa"),
+        ("🎬", "Edición Pro", "Transiciones y efectos",
+         "**¿Qué hace?** 47 transiciones (fade, slide, zoom) y 80 efectos visuales (vintage, glitch, noir).\n\n**Importancia:** La calidad de edición diferencia amateur de profesional.\n\n**Capacidades:**\n- 47 transiciones XFade\n- 80 filtros con intensidad ajustable\n- Color grading cinematográfico\n- Efecto Ken Burns\n- Filtros de audio profesional"),
+        ("📝", "Subtítulos Auto", "Transcripción con Whisper",
+         "**¿Qué hace?** Transcribe audio con Whisper y quema subtítulos con estilo de la plantilla.\n\n**Importancia:** 85% de videos en redes se ven sin sonido.\n\n**Capacidades:**\n- Detección de idioma\n- Estilo adaptado a plantilla\n- Posición configurable\n- Exportación SRT"),
+        ("📱", "Multi-Formato", "YouTube, TikTok, Instagram",
+         "**¿Qué hace?** Exporta a 3 formatos simultáneos: 1920×1080, 1080×1920, 1080×1080.\n\n**Importancia:** Maximiza alcance en todas las plataformas.\n\n**Capacidades:**\n- 3 formatos con un clic\n- Calidad 1080p Full HD\n- Descargas independientes\n- Faststart para streaming"),
+        ("📅", "Agenda", "Programa publicaciones",
+         "**¿Qué hace?** Agenda y programa publicaciones desde un calendario centralizado.\n\n**Importancia:** La consistencia es clave para crecer.\n\n**Capacidades:**\n- Calendario visual\n- Estados: borrador/programada/publicada\n- Multi-plataforma"),
+        ("📊", "Análisis", "Mide y mejora tu estrategia",
+         "**¿Qué hace?** Analiza efectividad de posteos, lee comentarios, propone nuevas piezas.\n\n**Importancia:** Lo que no se mide, no se mejora.\n\n**Capacidades:**\n- Análisis de efectividad\n- Lectura de comentarios\n- Detección de patrones\n- Propuestas de contenido"),
+        ("📱", "Redes Sociales", "SEO y preview de posts",
+         "**¿Qué hace?** Genera contenido SEO editable y preview de cómo se verá publicado.\n\n**Importancia:** SEO aumenta descubrimiento orgánico 5x.\n\n**Capacidades:**\n- Caption optimizado\n- Hashtags y keywords\n- Preview visual por plataforma\n- Programar publicación"),
     ]
 
-    cols = st.columns(4)
-    for i, (icon, title, desc) in enumerate(features):
-        with cols[i % 4]:
-            st.markdown(f"""
-            <div class="glass-card-feature">
-                <div class="feature-icon">{icon}</div>
-                <div class="feature-title">{title}</div>
-                <div class="feature-desc">{desc}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    # Grid de funcionalidades con desplegables
+    for i in range(0, len(features), 4):
+        batch = features[i:i+4]
+        cols = st.columns(4)
+        for j, (icon, title, short, detalle) in enumerate(batch):
+            with cols[j]:
+                st.markdown(f"""
+                <div class="glass-card-feature">
+                    <div class="feature-icon">{icon}</div>
+                    <div class="feature-title">{title}</div>
+                    <div class="feature-desc">{short}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                with st.expander("ℹ️ Detalles", expanded=False):
+                    st.markdown(detalle)
 
+    # ============ BOTÓN EMPEZAR A CREAR (sobre Potencia) ============
     st.markdown("---")
-
-    # CTA
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🚀 Empezar a crear ahora", type="primary", use_container_width=True,
                      key="btn_empezar_crear"):
             if st.session_state.get('usuario'):
-                # Si ya está logueado, ir directo a producción
                 st.session_state.vista = "process"
                 st.session_state.wizard_step = 1
             else:
-                # Si no está logueado, mostrar login
                 st.session_state.vista = "auth"
                 st.session_state._show_login = True
             st.rerun()
+
+    # Si se solicitó mostrar login
+    if st.session_state.get("_show_login") and not st.session_state.get('usuario'):
+        st.markdown("---")
+        st.markdown("## 🔐 Acceder al sistema")
+        render_login_form()
+
+    # ============ POTENCIA DE LA PLATAFORMA (al final, horizontal) ============
+    st.markdown("---")
+    st.markdown("""
+    <style>
+    .stats-h { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 1rem 0; }
+    .stat-h { background: var(--bg-glass); border: 1px solid var(--border-glass);
+              border-radius: 12px; padding: 1rem 0.5rem; text-align: center;
+              backdrop-filter: blur(20px); transition: all 0.3s; }
+    .stat-h:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
+    .stat-h-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
+    .stat-h-val { font-size: 1.4rem; font-weight: 800; color: var(--text-primary) !important; }
+    .stat-h-lbl { font-size: 0.75rem; color: var(--text-muted) !important; margin-top: 0.3rem;
+                  text-transform: uppercase; letter-spacing: 0.05em; }
+    </style>
+    <div class="stats-h">
+        <div class="stat-h"><div class="stat-h-icon">🎬</div><div class="stat-h-val">20</div><div class="stat-h-lbl">Plantillas Pro</div></div>
+        <div class="stat-h"><div class="stat-h-icon">⚡</div><div class="stat-h-val">&lt;5min</div><div class="stat-h-lbl">Tiempo promedio</div></div>
+        <div class="stat-h"><div class="stat-h-icon">📱</div><div class="stat-h-val">3</div><div class="stat-h-lbl">Formatos simultáneos</div></div>
+        <div class="stat-h"><div class="stat-h-icon">🤖</div><div class="stat-h-val">100%</div><div class="stat-h-lbl">Automatizado por IA</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Branding final
+    st.markdown("""
+    <div style="text-align: center; margin-top: 1.5rem; padding-top: 1rem;
+                border-top: 1px solid rgba(99, 102, 241, 0.2);">
+        <p style="color: #64748b !important; font-size: 0.85rem; margin: 0;">
+            © 2025 VideoAI Studio Pro · Desarrollado por
+            <strong style="color: #a5b4fc !important;">Comunicaciones Integrales</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def render_process_page():
@@ -1297,13 +1347,17 @@ def main():
             st.markdown("---")
             st.info("👆 Inicia sesión para empezar a crear videos profesionales con IA")
 
-        # Acceso admin SOLO visible si se accede con parámetro especial en URL
-        # (?admin=1) - esto evita que usuarios normales lo vean
-        import urllib.parse
-        query_params = st.query_params
-        if "admin" in query_params and query_params["admin"] == "1":
-            if not is_admin():
-                render_admin_login()
+        # Acceso admin discreto en el footer del sidebar
+        if not is_admin():
+            with st.sidebar.expander("🔐 Acceso administrador", expanded=False):
+                admin_pass = st.text_input("Contraseña admin", type="password", key="admin_pass_input")
+                if st.button("🔑 Ingresar", type="primary", use_container_width=True):
+                    if verify_admin_password(admin_pass):
+                        st.session_state.admin_mode = True
+                        st.success("✅ Modo admin activado")
+                        st.rerun()
+                    else:
+                        st.error("❌ Contraseña incorrecta")
 
     # Contenido principal
     if is_admin():
@@ -1335,25 +1389,9 @@ def main():
         else:
             render_home_page()
     else:
-        # Usuario no logueado - mostrar landing simple
-        # Solo un botón de acceso al final de la portada
+        # Usuario no logueado - mostrar landing
+        # La portada ya tiene el botón "Empezar a crear" que muestra login
         render_home_page()
-
-        # Botón único de acceso (sin duplicados)
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button("🔐 Iniciar sesión / Crear cuenta", type="primary",
-                         use_container_width=True, key="btn_access_main"):
-                st.session_state.vista = "auth"
-                st.session_state._show_login = True
-                st.rerun()
-
-        # Si se solicitó mostrar login, mostrarlo
-        if st.session_state.get("_show_login"):
-            st.markdown("---")
-            st.markdown("## 🔐 Acceder al sistema")
-            render_login_form()
 
 
 if __name__ == "__main__":

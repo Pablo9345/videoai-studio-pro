@@ -96,12 +96,45 @@ def render_template_gallery(selected_id=None, categorias_filter=None):
             # Mostrar preview INLINE si está expandido
             if preview_expandido:
                 with st.container(border=True):
-                    # Preview compacto en vivo
-                    html_preview = generar_preview_compacto(plantilla)
-                    components.html(html_preview, height=120, scrolling=False)
+                    # Preview visual simple con CSS inline (sin dependencias externas)
+                    color_p = plantilla.get("color_primario", "#6366F1")
+                    color_s = plantilla.get("color_secundario", "#1E1B4B")
+                    color_a = plantilla.get("color_acento", "#FFFFFF")
+                    color_t = plantilla.get("color_texto", "#FFFFFF")
+                    preview_texto = plantilla.get("preview_texto", "Tu texto aquí")
+                    nombre = plantilla.get("nombre", "Plantilla")
+                    estilo = plantilla.get("estilo", "")
+                    transicion = plantilla.get("transicion", "fade")
+
+                    # HTML del preview con animación CSS simple
+                    preview_html = f"""
+                    <div style="width:100%; aspect-ratio:16/9;
+                                background: linear-gradient(135deg, {color_p} 0%, {color_s} 100%);
+                                border-radius:10px; display:flex; align-items:center;
+                                justify-content:center; flex-direction:column;
+                                color:{color_t}; text-align:center; padding:12px;
+                                position:relative; overflow:hidden;">
+                        <div style="position:absolute; top:8px; right:8px;
+                                    background:{color_a}33; color:{color_t};
+                                    padding:2px 8px; border-radius:10px; font-size:9px;
+                                    border:1px solid {color_a}80;">● LIVE</div>
+                        <div style="font-size:18px; font-weight:900;
+                                    text-shadow:0 2px 8px rgba(0,0,0,0.5);
+                                    margin-bottom:6px;">{preview_texto}</div>
+                        <div style="background:{color_a}; color:{color_s};
+                                    padding:3px 10px; border-radius:10px;
+                                    font-size:10px; font-weight:700;">▶ {nombre}</div>
+                        <div style="position:absolute; bottom:6px; left:8px;
+                                    font-size:9px; opacity:0.7;">{estilo} · {transicion}</div>
+                    </div>
+                    """
+                    st.markdown(preview_html, unsafe_allow_html=True)
+
+                    # Información rápida de la plantilla
+                    st.caption(f"🎨 Colores: {color_p} / {color_s} / {color_a}")
 
                     # Botón para abrir popup con preview completo
-                    if st.button("🍿 Ver Preview Completo (Popup)", key=f"popup_{plantilla_id}",
+                    if st.button("🍿 Ver Preview Animado Completo", key=f"popup_{plantilla_id}",
                                  use_container_width=True):
                         st.session_state.preview_plantilla_id = plantilla_id
                         st.rerun()
@@ -458,11 +491,31 @@ def render_preview_modal(plantilla: Dict[str, Any]):
 
     # Preview animado en vivo
     st.markdown("### ▶ Preview en vivo")
-    html_preview = generar_preview_animado(
-        plantilla, titulo_preview, tipo_preview, duracion_preview
-    )
-    # Usar components.html para renderizar HTML completo con animaciones
-    components.html(html_preview, height=500, scrolling=False)
+    try:
+        html_preview = generar_preview_animado(
+            plantilla, titulo_preview, tipo_preview, duracion_preview
+        )
+        # Usar components.html para renderizar HTML completo con animaciones
+        components.html(html_preview, height=500, scrolling=True)
+    except Exception as e:
+        st.warning(f"El preview animado no pudo cargarse. Mostrando vista estática.")
+        # Fallback: preview estático simple
+        color_p = plantilla.get("color_primario", "#6366F1")
+        color_s = plantilla.get("color_secundario", "#1E1B4B")
+        color_a = plantilla.get("color_acento", "#FFFFFF")
+        color_t = plantilla.get("color_texto", "#FFFFFF")
+        st.markdown(f"""
+        <div style="width:100%; aspect-ratio:16/9;
+                    background: linear-gradient(135deg, {color_p} 0%, {color_s} 100%);
+                    border-radius:12px; display:flex; align-items:center;
+                    justify-content:center; flex-direction:column;
+                    color:{color_t}; text-align:center; padding:20px;">
+            <div style="font-size:28px; font-weight:900; margin-bottom:8px;">{titulo_preview}</div>
+            <div style="font-size:14px; opacity:0.9; margin-bottom:12px;">{tipo_preview}</div>
+            <div style="background:{color_a}; color:{color_s}; padding:6px 16px;
+                        border-radius:20px; font-size:12px; font-weight:700;">▶ COMENZAR</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Información detallada de la plantilla
     st.markdown("### 📋 Detalles de la plantilla")
